@@ -1,5 +1,12 @@
+import { Biome } from './biome.ts';
 import type { PhenotypeRanges } from './genetics.ts';
-import { DEFAULT_HERBIVORE_PARAMS, DEFAULT_PHENOTYPE_RANGES, HerbivorePopulation, type HerbivoreParams } from './herbivore.ts';
+import {
+  DEFAULT_HERBIVORE_PARAMS,
+  DEFAULT_PHENOTYPE_RANGES,
+  HerbivorePopulation,
+  type BiomeAffinity,
+  type HerbivoreParams,
+} from './herbivore.ts';
 import { DEFAULT_PREDATOR_PARAMS, DEFAULT_PREDATOR_PHENOTYPE_RANGES, PredatorPopulation, type PredatorParams } from './predator.ts';
 import { hashStringToSeed, mulberry32, type Rng } from './random.ts';
 import { World } from './world.ts';
@@ -43,17 +50,37 @@ export interface PredatorSpeciesInstance {
   prey: HerbivorePopulation;
 }
 
+// Biome preference (see HerbivoreParams.biomeAffinity): without this, every herbivore species
+// chases the single richest biome on the map (Forest, biomassMax 140) regardless of niche, since
+// chooseGreedyMove only ever sees raw biomass quantity. Weights are strong enough to flip the
+// *preferred* biome's weighted score above Forest's despite Forest's raw abundance advantage
+// (e.g. plains-grazer: 100 * 1.3 = 130 > 140 * 0.5 = 70), not just nudge it.
+const PLAINS_GRAZER_AFFINITY: BiomeAffinity = {
+  [Biome.Plains]: 1.3,
+  [Biome.Hills]: 1.0,
+  [Biome.Beach]: 0.8,
+  [Biome.Forest]: 0.5,
+  [Biome.Mountain]: 0.5,
+};
+
+const FOREST_BROWSER_AFFINITY: BiomeAffinity = {
+  [Biome.Forest]: 1.3,
+  [Biome.Hills]: 1.1,
+  [Biome.Beach]: 0.6,
+  [Biome.Plains]: 0.45,
+  [Biome.Mountain]: 0.5,
+};
+
 // Vision-heavy, costlier-moving forest specialist: leans on spotting rich
 // patches rather than covering ground cheaply, converts food better once it
 // finds it, and breeds more conservatively — a different bet than the plains
 // grazer's cheap-movement, high-throughput strategy. Foraging capability
 // (eatRate, moveCost) is kept at parity with the grazer rather than strictly
-// worse: both species end up competing for the same cells (this engine has
-// no per-biome species preference, only raw biomass-quantity greed), so a
-// niche that's simply weaker at the same game reliably starved to extinction
-// in isolation testing — the differentiation has to be a genuinely different
-// strategy (wider vision, cheaper upkeep, pickier/slower reproduction), not a
-// handicap.
+// worse — a niche that's simply weaker at the same game reliably starved to
+// extinction in isolation testing when both species converged on the same
+// biome; the differentiation is a genuinely different strategy (wider
+// vision, cheaper upkeep, pickier/slower reproduction, different preferred
+// biome), not a handicap.
 const FOREST_BROWSER_PHENOTYPE_RANGES: PhenotypeRanges = {
   visionRadius: [3, 8],
   moveCost: [0.9, 0.3],
@@ -68,6 +95,7 @@ const FOREST_BROWSER_PHENOTYPE_RANGES: PhenotypeRanges = {
 const FOREST_BROWSER_PARAMS: HerbivoreParams = {
   ...DEFAULT_HERBIVORE_PARAMS,
   phenotypeRanges: FOREST_BROWSER_PHENOTYPE_RANGES,
+  biomeAffinity: FOREST_BROWSER_AFFINITY,
   matureAge: 300,
   maxAge: 650,
 };
@@ -106,7 +134,7 @@ export const HERBIVORE_SPECIES_PRESETS: HerbivoreSpeciesPreset[] = [
     label: 'Herbivores (plaine)',
     hueOffset: 0,
     defaultInitialCount: 150,
-    params: { ...DEFAULT_HERBIVORE_PARAMS, phenotypeRanges: DEFAULT_PHENOTYPE_RANGES },
+    params: { ...DEFAULT_HERBIVORE_PARAMS, phenotypeRanges: DEFAULT_PHENOTYPE_RANGES, biomeAffinity: PLAINS_GRAZER_AFFINITY },
   },
   {
     id: 'forest-browser',

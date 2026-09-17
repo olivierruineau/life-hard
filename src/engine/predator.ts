@@ -67,10 +67,15 @@ export const DEFAULT_PREDATOR_PARAMS: PredatorParams = {
   maxMatingDistance: 0.4,
   phenotypeRanges: DEFAULT_PREDATOR_PHENOTYPE_RANGES,
 
-  catchBaseChance: 0.35,
+  // Predator population growth is bottlenecked by spatial mate-finding, not food — it plateaus
+  // around 10-40 individuals even with thousands of available prey, so a stronger per-capita catch
+  // rate (bumped from 0.35/20 during multi-species balancing) is what keeps a static-sized predator
+  // pack's aggregate harvest actually tracking herbivore population growth instead of a handful of
+  // predators being permanently outpaced by an exponentially growing prey base.
+  catchBaseChance: 0.5,
   catchSpeedFactor: 0.25,
   huntRadius: 2,
-  huntCooldown: 20,
+  huntCooldown: 18,
   scarcityReferencePopulation: 150,
   scarcityFloor: 0.05,
   predatorInterferenceStrength: 0.5,

@@ -1,3 +1,4 @@
+import { Biome } from './biome.ts';
 import {
   derivePhenotype,
   mutateGenome,
@@ -10,6 +11,15 @@ import { chooseGreedyMove } from './movement.ts';
 import type { Rng } from './random.ts';
 import { performMating, type ReproductionParams } from './reproduction.ts';
 import type { World } from './world.ts';
+
+/**
+ * Per-biome foraging preference multiplier, applied to a cell's raw biomass when a species scores
+ * candidate cells to move toward. Biomes absent from the map default to 1 (no preference). This
+ * only biases *where* a species chooses to forage, not how much it actually eats once there
+ * (`world.consume` is unaffected) — without it every herbivore species chases the single richest
+ * biome on the map regardless of niche, since raw biomass quantity is all `chooseGreedyMove` sees.
+ */
+export type BiomeAffinity = Partial<Record<Biome, number>>;
 
 export interface Herbivore {
   x: number;
@@ -26,6 +36,8 @@ export interface HerbivoreParams extends ReproductionParams {
   initialEnergy: number;
   eatRate: number;
   phenotypeRanges: PhenotypeRanges;
+  /** Foraging preference by biome; absent = uniform (today's behavior). */
+  biomeAffinity?: BiomeAffinity;
 
   /** Age (in ticks) at which senescence starts adding extra metabolic cost. */
   matureAge: number;
@@ -107,22 +119,20 @@ export class HerbivorePopulation {
     }
   }
 
-  /** Aging, movement toward food, grazing, and mating-cooldown tick-down. */
+  /** Aging, movement toward food (weighted by biome preference), grazing, and mating-cooldown tick-down. */
   moveAndFeed(world: World, rng: Rng): void {
+    const affinity = this.params.biomeAffinity;
+    const scoreAt = affinity
+      ? (x: number, y: number) => world.biomass[world.index(x, y)] * (affinity[world.biomeAt(x, y)] ?? 1)
+      : (x: number, y: number) => world.biomass[world.index(x, y)];
+
     for (const h of this.individuals) {
       h.age++;
       const traits = this.traits(h.genome);
       const senescence = Math.max(0, h.age - this.params.matureAge) * this.params.senescenceRate;
       h.energy -= traits.restMetabolism + senescence;
 
-      const [dx, dy] = chooseGreedyMove(
-        world,
-        h.x,
-        h.y,
-        traits.visionRadius,
-        (x, y) => world.biomass[world.index(x, y)],
-        rng,
-      );
+      const [dx, dy] = chooseGreedyMove(world, h.x, h.y, traits.visionRadius, scoreAt, rng);
       if (dx !== 0 || dy !== 0) {
         h.x += dx;
         h.y += dy;
