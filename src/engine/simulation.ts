@@ -20,7 +20,7 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   waterLevel: 0.35,
   reliefOctaves: 5,
   initialHerbivores: 150,
-  initialPredators: 8,
+  initialPredators: 15,
 };
 
 export class Simulation {
