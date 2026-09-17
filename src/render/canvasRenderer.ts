@@ -63,5 +63,16 @@ export class CanvasRenderer {
       this.ctx.arc(h.x * cs + cs / 2, h.y * cs + cs / 2, radius, 0, Math.PI * 2);
       this.ctx.fill();
     }
+
+    const predatorRadius = Math.max(0.9, cs * 0.42);
+    for (const p of sim.predators.individuals) {
+      this.ctx.fillStyle = genomeToColor(p.genome);
+      this.ctx.beginPath();
+      this.ctx.arc(p.x * cs + cs / 2, p.y * cs + cs / 2, predatorRadius, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.lineWidth = Math.max(0.5, cs * 0.08);
+      this.ctx.strokeStyle = '#0a0a0a';
+      this.ctx.stroke();
+    }
   }
 }

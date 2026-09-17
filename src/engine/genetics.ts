@@ -101,7 +101,8 @@ export interface Phenotype {
   moveCost: number;
   swimCost: number;
   restMetabolism: number;
-  energyPerBiomass: number;
+  /** Efficiency at converting food (grazed biomass, or a caught prey's energy) into own energy. */
+  conversionEfficiency: number;
   matingEnergyThreshold: number;
   maxLitterSize: number;
 }
@@ -112,7 +113,7 @@ export interface PhenotypeRanges {
   swimCost: readonly [number, number];
   baseRestMetabolism: number;
   restMetabolismGeneFactor: number;
-  energyPerBiomass: readonly [number, number];
+  conversionEfficiency: readonly [number, number];
   matingEnergyThreshold: readonly [number, number];
   maxLitterSize: readonly [number, number];
 }
@@ -126,7 +127,7 @@ export function derivePhenotype(genome: Genome, ranges: PhenotypeRanges): Phenot
       ranges.baseRestMetabolism +
       (genome.vision + genome.speed + genome.fertility + genome.efficiency) *
         ranges.restMetabolismGeneFactor,
-    energyPerBiomass: lerp(...ranges.energyPerBiomass, genome.efficiency),
+    conversionEfficiency: lerp(...ranges.conversionEfficiency, genome.efficiency),
     matingEnergyThreshold: lerp(...ranges.matingEnergyThreshold, 1 - genome.fertility),
     maxLitterSize: Math.round(lerp(...ranges.maxLitterSize, genome.fertility)),
   };

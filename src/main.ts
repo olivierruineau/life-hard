@@ -12,6 +12,7 @@ app.innerHTML = `
     <label class="control">Niveau d'eau<input id="p-water" type="number" min="0" max="0.9" step="0.05" /></label>
     <label class="control">Relief (octaves)<input id="p-relief" type="number" min="1" max="8" step="1" /></label>
     <label class="control">Herbivores initiaux<input id="p-herbivores" type="number" min="0" max="2000" step="10" /></label>
+    <label class="control">Prédateurs initiaux<input id="p-predators" type="number" min="0" max="500" step="1" /></label>
     <div id="actions">
       <button id="btn-restart">Nouvelle simulation</button>
       <button id="btn-toggle">Pause</button>
@@ -27,6 +28,7 @@ app.innerHTML = `
   <div id="stats">
     <span>Tick: <strong id="stat-tick">0</strong></span>
     <span>Herbivores: <strong id="stat-herbivores">0</strong></span>
+    <span>Prédateurs: <strong id="stat-predators">0</strong></span>
   </div>
   <canvas id="population-chart"></canvas>
 `;
@@ -41,6 +43,7 @@ function readParams(): SimulationParams {
     waterLevel: num('p-water'),
     reliefOctaves: num('p-relief'),
     initialHerbivores: num('p-herbivores'),
+    initialPredators: num('p-predators'),
   };
 }
 
@@ -51,6 +54,7 @@ function writeParams(params: SimulationParams): void {
   (document.getElementById('p-water') as HTMLInputElement).value = String(params.waterLevel);
   (document.getElementById('p-relief') as HTMLInputElement).value = String(params.reliefOctaves);
   (document.getElementById('p-herbivores') as HTMLInputElement).value = String(params.initialHerbivores);
+  (document.getElementById('p-predators') as HTMLInputElement).value = String(params.initialPredators);
 }
 
 writeParams(DEFAULT_SIMULATION_PARAMS);
@@ -60,23 +64,16 @@ const renderer = new CanvasRenderer(canvas);
 
 const chartCanvas = document.getElementById('population-chart') as HTMLCanvasElement;
 const chartCtx = chartCanvas.getContext('2d')!;
-const populationHistory: number[] = [];
+const herbivoreHistory: number[] = [];
+const predatorHistory: number[] = [];
 
-function drawChart(): void {
-  const rect = chartCanvas.getBoundingClientRect();
-  chartCanvas.width = rect.width;
-  chartCanvas.height = rect.height;
-
-  chartCtx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
-  if (populationHistory.length < 2) return;
-
-  const max = Math.max(...populationHistory, 1);
-  const step = chartCanvas.width / (populationHistory.length - 1);
-
-  chartCtx.strokeStyle = '#d6304a';
+function drawSeries(values: number[], max: number, color: string): void {
+  if (values.length < 2) return;
+  const step = chartCanvas.width / (values.length - 1);
+  chartCtx.strokeStyle = color;
   chartCtx.lineWidth = 2;
   chartCtx.beginPath();
-  populationHistory.forEach((count, i) => {
+  values.forEach((count, i) => {
     const x = i * step;
     const y = chartCanvas.height - (count / max) * (chartCanvas.height - 8) - 4;
     if (i === 0) chartCtx.moveTo(x, y);
@@ -85,12 +82,24 @@ function drawChart(): void {
   chartCtx.stroke();
 }
 
+function drawChart(): void {
+  const rect = chartCanvas.getBoundingClientRect();
+  chartCanvas.width = rect.width;
+  chartCanvas.height = rect.height;
+
+  chartCtx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+  const max = Math.max(...herbivoreHistory, ...predatorHistory, 1);
+  drawSeries(herbivoreHistory, max, '#d6304a');
+  drawSeries(predatorHistory, max, '#f0c419');
+}
+
 let sim = new Simulation(readParams());
 let running = true;
 
 function restart(): void {
   sim = new Simulation(readParams());
-  populationHistory.length = 0;
+  herbivoreHistory.length = 0;
+  predatorHistory.length = 0;
   tickAccumulator = 0;
   renderFrame();
 }
@@ -99,6 +108,7 @@ function renderFrame(): void {
   renderer.render(sim);
   (document.getElementById('stat-tick') as HTMLElement).textContent = String(sim.tick);
   (document.getElementById('stat-herbivores') as HTMLElement).textContent = String(sim.herbivores.individuals.length);
+  (document.getElementById('stat-predators') as HTMLElement).textContent = String(sim.predators.individuals.length);
   drawChart();
 }
 
@@ -109,9 +119,16 @@ document.getElementById('btn-toggle')!.addEventListener('click', (e) => {
   (e.target as HTMLButtonElement).textContent = running ? 'Pause' : 'Reprendre';
 });
 
+function recordHistory(): void {
+  herbivoreHistory.push(sim.herbivores.individuals.length);
+  predatorHistory.push(sim.predators.individuals.length);
+  if (herbivoreHistory.length > 500) herbivoreHistory.shift();
+  if (predatorHistory.length > 500) predatorHistory.shift();
+}
+
 document.getElementById('btn-step')!.addEventListener('click', () => {
   sim.step();
-  populationHistory.push(sim.herbivores.individuals.length);
+  recordHistory();
   renderFrame();
 });
 
@@ -139,8 +156,7 @@ function loop(): void {
     tickAccumulator += SPEED_STEPS[speedIndex];
     while (tickAccumulator >= 1) {
       sim.step();
-      populationHistory.push(sim.herbivores.individuals.length);
-      if (populationHistory.length > 500) populationHistory.shift();
+      recordHistory();
       tickAccumulator -= 1;
     }
     renderFrame();

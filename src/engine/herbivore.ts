@@ -1,14 +1,14 @@
 import {
-  crossoverGenome,
   derivePhenotype,
-  genomeDistance,
   mutateGenome,
   seedGenome,
   type Genome,
   type Phenotype,
   type PhenotypeRanges,
 } from './genetics.ts';
+import { chooseGreedyMove } from './movement.ts';
 import type { Rng } from './random.ts';
+import { performMating, type ReproductionParams } from './reproduction.ts';
 import type { World } from './world.ts';
 
 export interface Herbivore {
@@ -22,22 +22,9 @@ export interface Herbivore {
   genome: Genome;
 }
 
-export interface HerbivoreParams {
+export interface HerbivoreParams extends ReproductionParams {
   initialEnergy: number;
   eatRate: number;
-  minLitterSize: number;
-  /** Total energy cost of a litter of size 1; larger litters cost more than proportionally. */
-  litterCostBase: number;
-  /** Exponent applied to litter size in the cost formula (>1 makes bigger litters disproportionately costly). */
-  litterCostExponent: number;
-  /** Fraction of the per-child cost the newborn actually receives as starting energy. */
-  childEnergyEfficiency: number;
-  /** Ticks a parent must wait before it can mate again. */
-  reproductionCooldown: number;
-  /** Radius (in cells) within which two eligible individuals can find each other and mate. */
-  matingRadius: number;
-  /** Max normalized genetic distance (see genomeDistance) at which two individuals can still interbreed. */
-  maxMatingDistance: number;
   phenotypeRanges: PhenotypeRanges;
 
   /** Age (in ticks) at which senescence starts adding extra metabolic cost. */
@@ -54,7 +41,7 @@ export const DEFAULT_PHENOTYPE_RANGES: PhenotypeRanges = {
   swimCost: [6, 2],
   baseRestMetabolism: 1.2,
   restMetabolismGeneFactor: 0.2,
-  energyPerBiomass: [0.35, 0.65],
+  conversionEfficiency: [0.35, 0.65],
   matingEnergyThreshold: [60, 100],
   maxLitterSize: [1, 4],
 };
@@ -75,68 +62,6 @@ export const DEFAULT_HERBIVORE_PARAMS: HerbivoreParams = {
   senescenceRate: 0.02,
   maxAge: 550,
 };
-
-function litterCost(litterSize: number, params: HerbivoreParams): number {
-  return params.litterCostBase * litterSize ** params.litterCostExponent;
-}
-
-const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
-  [0, -1], [0, 1], [-1, 0], [1, 0],
-  [-1, -1], [1, -1], [-1, 1], [1, 1],
-];
-
-/**
- * Picks a one-step move: toward the richest land cell within vision, falling
- * back to a random land step, and only entering water when no land option exists.
- */
-function chooseMove(world: World, h: Herbivore, visionRadius: number, rng: Rng): [number, number] {
-  let bestScore = -1;
-  let bestX = h.x;
-  let bestY = h.y;
-
-  for (let dy = -visionRadius; dy <= visionRadius; dy++) {
-    for (let dx = -visionRadius; dx <= visionRadius; dx++) {
-      const nx = h.x + dx;
-      const ny = h.y + dy;
-      if (!world.inBounds(nx, ny) || world.isWater(nx, ny)) continue;
-      const score = world.biomass[world.index(nx, ny)];
-      if (score > bestScore) {
-        bestScore = score;
-        bestX = nx;
-        bestY = ny;
-      }
-    }
-  }
-
-  const landCandidates: Array<[number, number]> = [];
-  const waterCandidates: Array<[number, number]> = [];
-  for (const [dx, dy] of NEIGHBOR_OFFSETS) {
-    const nx = h.x + dx;
-    const ny = h.y + dy;
-    if (!world.inBounds(nx, ny)) continue;
-    (world.isWater(nx, ny) ? waterCandidates : landCandidates).push([dx, dy]);
-  }
-
-  if (bestScore > 0) {
-    return [Math.sign(bestX - h.x), Math.sign(bestY - h.y)];
-  }
-
-  if (landCandidates.length > 0) {
-    return landCandidates[Math.floor(rng() * landCandidates.length)];
-  }
-  if (waterCandidates.length > 0) {
-    return waterCandidates[Math.floor(rng() * waterCandidates.length)];
-  }
-  return [0, 0];
-}
-
-interface MatingEvent {
-  x: number;
-  y: number;
-  litterSize: number;
-  childEnergy: number;
-  genome: Genome;
-}
 
 export class HerbivorePopulation {
   readonly individuals: Herbivore[] = [];
@@ -170,14 +95,22 @@ export class HerbivorePopulation {
     }
   }
 
-  private moveAndFeed(world: World, rng: Rng): void {
+  /** Aging, movement toward food, grazing, and mating-cooldown tick-down. */
+  moveAndFeed(world: World, rng: Rng): void {
     for (const h of this.individuals) {
       h.age++;
       const traits = this.traits(h.genome);
       const senescence = Math.max(0, h.age - this.params.matureAge) * this.params.senescenceRate;
       h.energy -= traits.restMetabolism + senescence;
 
-      const [dx, dy] = chooseMove(world, h, traits.visionRadius, rng);
+      const [dx, dy] = chooseGreedyMove(
+        world,
+        h.x,
+        h.y,
+        traits.visionRadius,
+        (x, y) => world.biomass[world.index(x, y)],
+        rng,
+      );
       if (dx !== 0 || dy !== 0) {
         h.x += dx;
         h.y += dy;
@@ -186,85 +119,23 @@ export class HerbivorePopulation {
 
       if (!world.isWater(h.x, h.y)) {
         const eaten = world.consume(h.x, h.y, this.params.eatRate);
-        h.energy += eaten * traits.energyPerBiomass;
+        h.energy += eaten * traits.conversionEfficiency;
       }
 
       if (h.cooldown > 0) h.cooldown--;
     }
   }
 
-  private mate(world: World, rng: Rng): MatingEvent[] {
-    const params = this.params;
-    const buckets = new Map<number, number[]>();
-    for (let i = 0; i < this.individuals.length; i++) {
-      const h = this.individuals[i];
-      const key = world.index(h.x, h.y);
-      const bucket = buckets.get(key);
-      if (bucket) bucket.push(i);
-      else buckets.set(key, [i]);
-    }
-
-    const isEligible = (h: Herbivore) => h.cooldown === 0 && h.energy >= this.traits(h.genome).matingEnergyThreshold;
-    const paired = new Set<number>();
-    const events: MatingEvent[] = [];
-    const r = params.matingRadius;
-
-    for (let i = 0; i < this.individuals.length; i++) {
-      if (paired.has(i)) continue;
-      const h = this.individuals[i];
-      if (!isEligible(h)) continue;
-
-      let partnerIndex = -1;
-      outer: for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          const nx = h.x + dx;
-          const ny = h.y + dy;
-          if (!world.inBounds(nx, ny)) continue;
-          const bucket = buckets.get(world.index(nx, ny));
-          if (!bucket) continue;
-          for (const j of bucket) {
-            if (j === i || paired.has(j)) continue;
-            const candidate = this.individuals[j];
-            if (!isEligible(candidate)) continue;
-            if (genomeDistance(h.genome, candidate.genome) > params.maxMatingDistance) continue;
-            partnerIndex = j;
-            break outer;
-          }
-        }
-      }
-
-      if (partnerIndex === -1) continue;
-      const partner = this.individuals[partnerIndex];
-
-      const hFertility = this.traits(h.genome).maxLitterSize;
-      const partnerFertility = this.traits(partner.genome).maxLitterSize;
-      const maxLitter = Math.max(params.minLitterSize, Math.round((hFertility + partnerFertility) / 2));
-      const litterSize = params.minLitterSize + Math.floor(rng() * (maxLitter - params.minLitterSize + 1));
-      const totalCost = litterCost(litterSize, params);
-      const costEach = totalCost / 2;
-
-      h.energy -= costEach;
-      partner.energy -= costEach;
-      h.cooldown = params.reproductionCooldown;
-      partner.cooldown = params.reproductionCooldown;
-      paired.add(i);
-      paired.add(partnerIndex);
-
-      events.push({
-        x: h.x,
-        y: h.y,
-        litterSize,
-        childEnergy: (totalCost / litterSize) * params.childEnergyEfficiency,
-        genome: crossoverGenome(h.genome, partner.genome, rng),
-      });
-    }
-
-    return events;
-  }
-
-  step(world: World, rng: Rng): void {
-    this.moveAndFeed(world, rng);
-    const events = this.mate(world, rng);
+  /** Mating, death (starvation, predation, or old age), and spawning newborns. */
+  reproduceAndCleanup(world: World, rng: Rng): void {
+    const events = performMating(
+      this.individuals,
+      world,
+      this.params,
+      (h) => this.traits(h.genome).matingEnergyThreshold,
+      (h) => this.traits(h.genome).maxLitterSize,
+      rng,
+    );
 
     for (let i = this.individuals.length - 1; i >= 0; i--) {
       const h = this.individuals[i];
@@ -283,5 +154,10 @@ export class HerbivorePopulation {
         });
       }
     }
+  }
+
+  step(world: World, rng: Rng): void {
+    this.moveAndFeed(world, rng);
+    this.reproduceAndCleanup(world, rng);
   }
 }
