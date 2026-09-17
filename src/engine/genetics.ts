@@ -58,10 +58,13 @@ export function genomeDistance(a: Genome, b: Genome): number {
 /**
  * Deterministic color from a genome, so visually similar individuals share a
  * similar color — genetic clusters ("species") become visible as the
- * population diverges.
+ * population diverges. `hueOffset`/`hueSpan` let a species own a band of the
+ * wheel instead of the full range, so distinct species stay visually
+ * distinguishable from each other while still showing per-individual
+ * genetic variation within their own band.
  */
-export function genomeToColor(genome: Genome): string {
-  const hue = (genome.speed * 0.5 + genome.vision * 0.5) * 300;
+export function genomeToColor(genome: Genome, hueOffset = 0, hueSpan = 300): string {
+  const hue = (hueOffset + (genome.speed * 0.5 + genome.vision * 0.5) * hueSpan) % 360;
   const saturation = 45 + genome.efficiency * 45;
   const lightness = 40 + genome.fertility * 25;
   return `hsl(${hue.toFixed(0)}, ${saturation.toFixed(0)}%, ${lightness.toFixed(0)}%)`;

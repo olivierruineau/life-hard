@@ -1,6 +1,19 @@
 import './style.css';
-import { DEFAULT_SIMULATION_PARAMS, Simulation, type SimulationParams } from './engine/simulation.ts';
+import {
+  DEFAULT_SIMULATION_PARAMS,
+  HERBIVORE_SPECIES_PRESETS,
+  PREDATOR_SPECIES_PRESETS,
+  Simulation,
+  type SimulationParams,
+} from './engine/simulation.ts';
 import { CanvasRenderer } from './render/canvasRenderer.ts';
+
+const herbivoreControls = HERBIVORE_SPECIES_PRESETS.map(
+  (p) => `<label class="control">${p.label}<input id="p-herb-${p.id}" type="number" min="0" max="2000" step="10" /></label>`,
+).join('');
+const predatorControls = PREDATOR_SPECIES_PRESETS.map(
+  (p) => `<label class="control">${p.label}<input id="p-pred-${p.id}" type="number" min="0" max="500" step="1" /></label>`,
+).join('');
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
@@ -11,8 +24,8 @@ app.innerHTML = `
     <label class="control">Seed<input id="p-seed" type="text" /></label>
     <label class="control">Niveau d'eau<input id="p-water" type="number" min="0" max="0.9" step="0.05" /></label>
     <label class="control">Relief (octaves)<input id="p-relief" type="number" min="1" max="8" step="1" /></label>
-    <label class="control">Herbivores initiaux<input id="p-herbivores" type="number" min="0" max="2000" step="10" /></label>
-    <label class="control">Prédateurs initiaux<input id="p-predators" type="number" min="0" max="500" step="1" /></label>
+    ${herbivoreControls}
+    ${predatorControls}
     <div id="actions">
       <button id="btn-restart">Nouvelle simulation</button>
       <button id="btn-toggle">Pause</button>
@@ -27,8 +40,7 @@ app.innerHTML = `
   <div id="canvas-wrap"><canvas id="sim-canvas"></canvas></div>
   <div id="stats">
     <span>Tick: <strong id="stat-tick">0</strong></span>
-    <span>Herbivores: <strong id="stat-herbivores">0</strong></span>
-    <span>Prédateurs: <strong id="stat-predators">0</strong></span>
+    <span id="stat-species"></span>
   </div>
   <canvas id="population-chart"></canvas>
 `;
@@ -42,8 +54,8 @@ function readParams(): SimulationParams {
     seed: text('p-seed'),
     waterLevel: num('p-water'),
     reliefOctaves: num('p-relief'),
-    initialHerbivores: num('p-herbivores'),
-    initialPredators: num('p-predators'),
+    herbivoreSpecies: HERBIVORE_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: num(`p-herb-${p.id}`) })),
+    predatorSpecies: PREDATOR_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: num(`p-pred-${p.id}`) })),
   };
 }
 
@@ -53,8 +65,12 @@ function writeParams(params: SimulationParams): void {
   (document.getElementById('p-seed') as HTMLInputElement).value = params.seed;
   (document.getElementById('p-water') as HTMLInputElement).value = String(params.waterLevel);
   (document.getElementById('p-relief') as HTMLInputElement).value = String(params.reliefOctaves);
-  (document.getElementById('p-herbivores') as HTMLInputElement).value = String(params.initialHerbivores);
-  (document.getElementById('p-predators') as HTMLInputElement).value = String(params.initialPredators);
+  for (const s of params.herbivoreSpecies) {
+    (document.getElementById(`p-herb-${s.id}`) as HTMLInputElement).value = String(s.initialCount);
+  }
+  for (const s of params.predatorSpecies) {
+    (document.getElementById(`p-pred-${s.id}`) as HTMLInputElement).value = String(s.initialCount);
+  }
 }
 
 writeParams(DEFAULT_SIMULATION_PARAMS);
@@ -64,8 +80,8 @@ const renderer = new CanvasRenderer(canvas);
 
 const chartCanvas = document.getElementById('population-chart') as HTMLCanvasElement;
 const chartCtx = chartCanvas.getContext('2d')!;
-const herbivoreHistory: number[] = [];
-const predatorHistory: number[] = [];
+const speciesHistory = new Map<string, number[]>();
+const speciesHue = new Map<string, number>();
 
 function drawSeries(values: number[], max: number, color: string): void {
   if (values.length < 2) return;
@@ -88,9 +104,10 @@ function drawChart(): void {
   chartCanvas.height = rect.height;
 
   chartCtx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
-  const max = Math.max(...herbivoreHistory, ...predatorHistory, 1);
-  drawSeries(herbivoreHistory, max, '#d6304a');
-  drawSeries(predatorHistory, max, '#f0c419');
+  const max = Math.max(1, ...[...speciesHistory.values()].map((values) => Math.max(0, ...values)));
+  for (const [id, values] of speciesHistory) {
+    drawSeries(values, max, `hsl(${speciesHue.get(id) ?? 0}, 70%, 55%)`);
+  }
 }
 
 let sim = new Simulation(readParams());
@@ -98,8 +115,8 @@ let running = true;
 
 function restart(): void {
   sim = new Simulation(readParams());
-  herbivoreHistory.length = 0;
-  predatorHistory.length = 0;
+  speciesHistory.clear();
+  speciesHue.clear();
   tickAccumulator = 0;
   renderFrame();
 }
@@ -107,8 +124,10 @@ function restart(): void {
 function renderFrame(): void {
   renderer.render(sim);
   (document.getElementById('stat-tick') as HTMLElement).textContent = String(sim.tick);
-  (document.getElementById('stat-herbivores') as HTMLElement).textContent = String(sim.herbivores.individuals.length);
-  (document.getElementById('stat-predators') as HTMLElement).textContent = String(sim.predators.individuals.length);
+  const statSpecies = document.getElementById('stat-species') as HTMLElement;
+  statSpecies.innerHTML = [...sim.herbivoreSpecies, ...sim.predatorSpecies]
+    .map((s) => `<span>${s.label}: <strong>${s.population.individuals.length}</strong></span>`)
+    .join('');
   drawChart();
 }
 
@@ -120,10 +139,13 @@ document.getElementById('btn-toggle')!.addEventListener('click', (e) => {
 });
 
 function recordHistory(): void {
-  herbivoreHistory.push(sim.herbivores.individuals.length);
-  predatorHistory.push(sim.predators.individuals.length);
-  if (herbivoreHistory.length > 500) herbivoreHistory.shift();
-  if (predatorHistory.length > 500) predatorHistory.shift();
+  for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies]) {
+    speciesHue.set(s.id, s.hueOffset);
+    const history = speciesHistory.get(s.id) ?? [];
+    history.push(s.population.individuals.length);
+    if (history.length > 500) history.shift();
+    speciesHistory.set(s.id, history);
+  }
 }
 
 document.getElementById('btn-step')!.addEventListener('click', () => {

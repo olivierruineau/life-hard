@@ -33,6 +33,11 @@ export interface HerbivoreParams extends ReproductionParams {
   senescenceRate: number;
   /** Hard cap: an individual dies of old age at this tick count regardless of energy. */
   maxAge: number;
+
+  /** Population at/below which stray individuals may wander in from outside the mapped area. */
+  immigrationThreshold: number;
+  /** Per-tick probability of a wandering-in arrival while the population is at/below that threshold. */
+  immigrationChancePerTick: number;
 }
 
 export const DEFAULT_PHENOTYPE_RANGES: PhenotypeRanges = {
@@ -61,6 +66,13 @@ export const DEFAULT_HERBIVORE_PARAMS: HerbivoreParams = {
   matureAge: 250,
   senescenceRate: 0.02,
   maxAge: 550,
+
+  // Same rationale as PredatorPopulation's immigration (see predator.ts): a small closed
+  // population sharing its food supply with a competing species can still get unlucky into
+  // extinction no matter how the hunting/competition economics are tuned — a low-rate trickle of
+  // outside arrivals is what turns a bad patch into a recoverable dip instead of a dead species.
+  immigrationThreshold: 6,
+  immigrationChancePerTick: 0.03,
 };
 
 export class HerbivorePopulation {
@@ -153,6 +165,30 @@ export class HerbivorePopulation {
           genome: mutateGenome(event.genome, rng),
         });
       }
+    }
+
+    this.immigrate(world, rng);
+  }
+
+  private immigrate(world: World, rng: Rng): void {
+    if (this.individuals.length > this.params.immigrationThreshold) return;
+    if (rng() >= this.params.immigrationChancePerTick) return;
+
+    let attempts = 0;
+    while (attempts < 50) {
+      attempts++;
+      const x = Math.floor(rng() * world.width);
+      const y = Math.floor(rng() * world.height);
+      if (world.isWater(x, y)) continue;
+      this.individuals.push({
+        x,
+        y,
+        energy: this.params.initialEnergy,
+        cooldown: 0,
+        age: 0,
+        genome: seedGenome(rng),
+      });
+      return;
     }
   }
 

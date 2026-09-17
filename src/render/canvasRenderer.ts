@@ -14,6 +14,9 @@ const BIOME_COLORS: Record<Biome, string> = {
 
 const BIOME_LIST = Object.values(Biome);
 
+/** Degrees of hue variation visible within one species' own color band. */
+const SPECIES_HUE_SPAN = 50;
+
 export class CanvasRenderer {
   private readonly ctx: CanvasRenderingContext2D;
   private cellSize = 1;
@@ -34,7 +37,7 @@ export class CanvasRenderer {
   }
 
   render(sim: Simulation): void {
-    const { world, herbivores } = sim;
+    const { world } = sim;
     if (this.canvas.width !== world.width * this.cellSize) {
       this.resize(world.width, world.height);
     }
@@ -57,22 +60,26 @@ export class CanvasRenderer {
     }
 
     const radius = Math.max(0.6, cs * 0.32);
-    for (const h of herbivores.individuals) {
-      this.ctx.fillStyle = genomeToColor(h.genome);
-      this.ctx.beginPath();
-      this.ctx.arc(h.x * cs + cs / 2, h.y * cs + cs / 2, radius, 0, Math.PI * 2);
-      this.ctx.fill();
+    for (const species of sim.herbivoreSpecies) {
+      for (const h of species.population.individuals) {
+        this.ctx.fillStyle = genomeToColor(h.genome, species.hueOffset, SPECIES_HUE_SPAN);
+        this.ctx.beginPath();
+        this.ctx.arc(h.x * cs + cs / 2, h.y * cs + cs / 2, radius, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
     }
 
     const predatorRadius = Math.max(0.9, cs * 0.42);
-    for (const p of sim.predators.individuals) {
-      this.ctx.fillStyle = genomeToColor(p.genome);
-      this.ctx.beginPath();
-      this.ctx.arc(p.x * cs + cs / 2, p.y * cs + cs / 2, predatorRadius, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.lineWidth = Math.max(0.5, cs * 0.08);
-      this.ctx.strokeStyle = '#0a0a0a';
-      this.ctx.stroke();
+    for (const species of sim.predatorSpecies) {
+      for (const p of species.population.individuals) {
+        this.ctx.fillStyle = genomeToColor(p.genome, species.hueOffset, SPECIES_HUE_SPAN);
+        this.ctx.beginPath();
+        this.ctx.arc(p.x * cs + cs / 2, p.y * cs + cs / 2, predatorRadius, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.lineWidth = Math.max(0.5, cs * 0.08);
+        this.ctx.strokeStyle = '#0a0a0a';
+        this.ctx.stroke();
+      }
     }
   }
 }

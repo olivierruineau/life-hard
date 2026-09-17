@@ -1,7 +1,149 @@
-import { DEFAULT_HERBIVORE_PARAMS, HerbivorePopulation } from './herbivore.ts';
-import { DEFAULT_PREDATOR_PARAMS, PredatorPopulation } from './predator.ts';
+import type { PhenotypeRanges } from './genetics.ts';
+import { DEFAULT_HERBIVORE_PARAMS, DEFAULT_PHENOTYPE_RANGES, HerbivorePopulation, type HerbivoreParams } from './herbivore.ts';
+import { DEFAULT_PREDATOR_PARAMS, DEFAULT_PREDATOR_PHENOTYPE_RANGES, PredatorPopulation, type PredatorParams } from './predator.ts';
 import { hashStringToSeed, mulberry32, type Rng } from './random.ts';
 import { World } from './world.ts';
+
+export interface SpeciesSelection {
+  id: string;
+  initialCount: number;
+}
+
+export interface HerbivoreSpeciesPreset {
+  id: string;
+  label: string;
+  /** Base hue (degrees) this species' individuals are colored around. */
+  hueOffset: number;
+  defaultInitialCount: number;
+  params: HerbivoreParams;
+}
+
+export interface PredatorSpeciesPreset {
+  id: string;
+  label: string;
+  hueOffset: number;
+  defaultInitialCount: number;
+  params: PredatorParams;
+  /** id of the HerbivoreSpeciesPreset this predator hunts. */
+  preyId: string;
+}
+
+export interface HerbivoreSpeciesInstance {
+  id: string;
+  label: string;
+  hueOffset: number;
+  population: HerbivorePopulation;
+}
+
+export interface PredatorSpeciesInstance {
+  id: string;
+  label: string;
+  hueOffset: number;
+  population: PredatorPopulation;
+  prey: HerbivorePopulation;
+}
+
+// Vision-heavy, costlier-moving forest specialist: leans on spotting rich
+// patches rather than covering ground cheaply, converts food better once it
+// finds it, and breeds more conservatively — a different bet than the plains
+// grazer's cheap-movement, high-throughput strategy. Foraging capability
+// (eatRate, moveCost) is kept at parity with the grazer rather than strictly
+// worse: both species end up competing for the same cells (this engine has
+// no per-biome species preference, only raw biomass-quantity greed), so a
+// niche that's simply weaker at the same game reliably starved to extinction
+// in isolation testing — the differentiation has to be a genuinely different
+// strategy (wider vision, cheaper upkeep, pickier/slower reproduction), not a
+// handicap.
+const FOREST_BROWSER_PHENOTYPE_RANGES: PhenotypeRanges = {
+  visionRadius: [3, 8],
+  moveCost: [0.9, 0.3],
+  swimCost: [6, 2],
+  baseRestMetabolism: 1.0,
+  restMetabolismGeneFactor: 0.15,
+  conversionEfficiency: [0.4, 0.7],
+  matingEnergyThreshold: [75, 110],
+  maxLitterSize: [1, 3],
+};
+
+const FOREST_BROWSER_PARAMS: HerbivoreParams = {
+  ...DEFAULT_HERBIVORE_PARAMS,
+  phenotypeRanges: FOREST_BROWSER_PHENOTYPE_RANGES,
+  matureAge: 300,
+  maxAge: 650,
+};
+
+// Sized down to match a smaller browser population: wider vision/hunt radius
+// to compensate for sparser prey, lower metabolism, and a scarcity/immigration
+// safety net scaled to the smaller prey base — the catch/interference/scarcity
+// formulas themselves are untouched.
+const FOREST_STALKER_PHENOTYPE_RANGES: PhenotypeRanges = {
+  visionRadius: [4, 10],
+  moveCost: [0.45, 0.2],
+  swimCost: [3.5, 1.8],
+  baseRestMetabolism: 0.45,
+  restMetabolismGeneFactor: 0.07,
+  conversionEfficiency: [0.55, 0.85],
+  matingEnergyThreshold: [70, 100],
+  maxLitterSize: [1, 3],
+};
+
+const FOREST_STALKER_PARAMS: PredatorParams = {
+  ...DEFAULT_PREDATOR_PARAMS,
+  phenotypeRanges: FOREST_STALKER_PHENOTYPE_RANGES,
+  // A smaller starting predator count still lands enough simultaneous strikes early on (while prey
+  // is naively abundant) to crash a browser population that dips as low as ~19 even on its own —
+  // isolation testing needed catchBaseChance dialed down from the plains-courser baseline, not just
+  // the population-scale-dependent safety nets (scarcity reference, immigration threshold), to stop
+  // that early burst from pushing the browser population past its own recovery floor.
+  catchBaseChance: 0.22,
+  scarcityReferencePopulation: 130,
+  immigrationThreshold: 4,
+};
+
+export const HERBIVORE_SPECIES_PRESETS: HerbivoreSpeciesPreset[] = [
+  {
+    id: 'plains-grazer',
+    label: 'Herbivores (plaine)',
+    hueOffset: 0,
+    defaultInitialCount: 150,
+    params: { ...DEFAULT_HERBIVORE_PARAMS, phenotypeRanges: DEFAULT_PHENOTYPE_RANGES },
+  },
+  {
+    id: 'forest-browser',
+    label: 'Herbivores (forêt)',
+    hueOffset: 180,
+    defaultInitialCount: 130,
+    params: FOREST_BROWSER_PARAMS,
+  },
+];
+
+export const PREDATOR_SPECIES_PRESETS: PredatorSpeciesPreset[] = [
+  {
+    id: 'plains-courser',
+    label: 'Prédateurs (plaine)',
+    hueOffset: 0,
+    defaultInitialCount: 15,
+    params: { ...DEFAULT_PREDATOR_PARAMS, phenotypeRanges: DEFAULT_PREDATOR_PHENOTYPE_RANGES },
+    preyId: 'plains-grazer',
+  },
+  {
+    id: 'forest-stalker',
+    label: 'Prédateurs (forêt)',
+    hueOffset: 180,
+    // Disabled by default: forest-browser is a slow K-selected breeder (high mating threshold,
+    // low eatRate) that can't out-reproduce any predation pressure strong enough for a predator to
+    // feed itself — every catch-rate tuning tried (matching, then well below, the validated
+    // plains-courser numbers) still crashed the browser to extinction within ~1000 ticks in
+    // isolation testing. The preset is kept as a working example of a second predator species (set
+    // its initial count > 0 to enable it) but needs a real balance pass — likely a faster-breeding
+    // browser variant — before it's viable as a default. Iterate the way predator.ts's own balance
+    // was found: a tsx script zeroing every species' initialCount except the pair under test, run
+    // for several thousand ticks per candidate parameter set (see scripts/balance-check.ts).
+    defaultInitialCount: 0,
+    params: FOREST_STALKER_PARAMS,
+    preyId: 'forest-browser',
+  },
+];
 
 export interface SimulationParams {
   width: number;
@@ -9,8 +151,8 @@ export interface SimulationParams {
   seed: string;
   waterLevel: number;
   reliefOctaves: number;
-  initialHerbivores: number;
-  initialPredators: number;
+  herbivoreSpecies: SpeciesSelection[];
+  predatorSpecies: SpeciesSelection[];
 }
 
 export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
@@ -19,14 +161,14 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   seed: 'life-hard',
   waterLevel: 0.35,
   reliefOctaves: 5,
-  initialHerbivores: 150,
-  initialPredators: 15,
+  herbivoreSpecies: HERBIVORE_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
+  predatorSpecies: PREDATOR_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
 };
 
 export class Simulation {
   readonly world: World;
-  readonly herbivores: HerbivorePopulation;
-  readonly predators: PredatorPopulation;
+  readonly herbivoreSpecies: HerbivoreSpeciesInstance[];
+  readonly predatorSpecies: PredatorSpeciesInstance[];
   private readonly rng: Rng;
   readonly params: SimulationParams;
   tick = 0;
@@ -41,18 +183,43 @@ export class Simulation {
       waterLevel: params.waterLevel,
       reliefOctaves: params.reliefOctaves,
     });
-    this.herbivores = new HerbivorePopulation(DEFAULT_HERBIVORE_PARAMS);
-    this.herbivores.spawnRandom(this.world, params.initialHerbivores, this.rng);
-    this.predators = new PredatorPopulation(DEFAULT_PREDATOR_PARAMS);
-    this.predators.spawnRandom(this.world, params.initialPredators, this.rng);
+
+    this.herbivoreSpecies = [];
+    for (const preset of HERBIVORE_SPECIES_PRESETS) {
+      const count = params.herbivoreSpecies.find((s) => s.id === preset.id)?.initialCount ?? 0;
+      if (count <= 0) continue;
+      const population = new HerbivorePopulation(preset.params);
+      population.spawnRandom(this.world, count, this.rng);
+      this.herbivoreSpecies.push({ id: preset.id, label: preset.label, hueOffset: preset.hueOffset, population });
+    }
+
+    this.predatorSpecies = [];
+    for (const preset of PREDATOR_SPECIES_PRESETS) {
+      const count = params.predatorSpecies.find((s) => s.id === preset.id)?.initialCount ?? 0;
+      if (count <= 0) continue;
+      const preyInstance = this.herbivoreSpecies.find((h) => h.id === preset.preyId);
+      if (!preyInstance) {
+        console.warn(`Predator species "${preset.id}" skipped: prey species "${preset.preyId}" is not active.`);
+        continue;
+      }
+      const population = new PredatorPopulation(preset.params);
+      population.spawnRandom(this.world, count, this.rng);
+      this.predatorSpecies.push({
+        id: preset.id,
+        label: preset.label,
+        hueOffset: preset.hueOffset,
+        population,
+        prey: preyInstance.population,
+      });
+    }
   }
 
   step(): void {
     this.world.step();
-    this.herbivores.moveAndFeed(this.world, this.rng);
-    this.predators.moveAndHunt(this.world, this.herbivores, this.rng);
-    this.herbivores.reproduceAndCleanup(this.world, this.rng);
-    this.predators.reproduceAndCleanup(this.world, this.rng);
+    for (const h of this.herbivoreSpecies) h.population.moveAndFeed(this.world, this.rng);
+    for (const p of this.predatorSpecies) p.population.moveAndHunt(this.world, p.prey, this.rng);
+    for (const h of this.herbivoreSpecies) h.population.reproduceAndCleanup(this.world, this.rng);
+    for (const p of this.predatorSpecies) p.population.reproduceAndCleanup(this.world, this.rng);
     this.tick++;
   }
 }
