@@ -1,4 +1,5 @@
 import { Biome } from '../engine/biome.ts';
+import { genomeToColor } from '../engine/genetics.ts';
 import type { Simulation } from '../engine/simulation.ts';
 
 const BIOME_COLORS: Record<Biome, string> = {
@@ -55,9 +56,12 @@ export class CanvasRenderer {
       }
     }
 
-    this.ctx.fillStyle = '#d6304a';
+    const radius = Math.max(0.6, cs * 0.32);
     for (const h of herbivores.individuals) {
-      this.ctx.fillRect(h.x * cs, h.y * cs, cs, cs);
+      this.ctx.fillStyle = genomeToColor(h.genome);
+      this.ctx.beginPath();
+      this.ctx.arc(h.x * cs + cs / 2, h.y * cs + cs / 2, radius, 0, Math.PI * 2);
+      this.ctx.fill();
     }
   }
 }
