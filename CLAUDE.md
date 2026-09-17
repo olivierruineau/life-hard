@@ -25,4 +25,6 @@ génétique et mutations entre générations.
   l'évolution de la population) plutôt que de se fier au seul typage.
 - Pas de dépendances externes ajoutées sans raison forte : le moteur et le
   rendu doivent rester simples (vanilla TS + Canvas).
-- Ne pas committer/pusher sans demande explicite de l'utilisateur.
+- Pousser régulièrement sur `origin main` (après chaque commit ou petite
+  série de commits liés), pour garder le dépôt distant à jour sans attendre
+  la fin d'une session.
