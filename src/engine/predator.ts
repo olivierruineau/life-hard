@@ -1,4 +1,13 @@
-import { derivePhenotype, genomeToColor, mutateGenes, seedGenes, type Phenotype, type PhenotypeRanges } from './genetics.ts';
+import {
+  deriveMatingEnergyThreshold,
+  deriveMaxLitterSize,
+  derivePhenotype,
+  genomeToColor,
+  mutateGenes,
+  seedGenes,
+  type Phenotype,
+  type PhenotypeRanges,
+} from './genetics.ts';
 import type { HerbivorePopulation } from './herbivore.ts';
 import { chooseGreedyMove, SpatialGrid } from './movement.ts';
 import type { Rng } from './random.ts';
@@ -110,8 +119,12 @@ export class PredatorPopulation {
   geneEfficiency: Float64Array = new Float64Array(0);
   /** Ticks remaining before this predator can attempt another catch (digestion). */
   huntCooldown: Int32Array = new Int32Array(0);
-  private matingThresholdScratch: Float64Array = new Float64Array(0);
-  private maxLitterScratch: Float64Array = new Float64Array(0);
+  // matingEnergyThreshold/maxLitterSize depend only on geneFertility, which never changes after
+  // birth — computed once in `append` and cached here (see HerbivorePopulation for the full
+  // rationale: this used to be recomputed via full derivePhenotype for the whole population on
+  // every reproduceAndCleanup call).
+  matingThreshold: Float64Array = new Float64Array(0);
+  maxLitterSize: Float64Array = new Float64Array(0);
 
   private grid: SpatialGrid | undefined;
   private readonly params: PredatorParams;
@@ -154,8 +167,8 @@ export class PredatorPopulation {
     this.geneFertility = grow(this.geneFertility) as Float64Array;
     this.geneEfficiency = grow(this.geneEfficiency) as Float64Array;
     this.huntCooldown = grow(this.huntCooldown) as Int32Array;
-    this.matingThresholdScratch = grow(this.matingThresholdScratch) as Float64Array;
-    this.maxLitterScratch = grow(this.maxLitterScratch) as Float64Array;
+    this.matingThreshold = grow(this.matingThreshold) as Float64Array;
+    this.maxLitterSize = grow(this.maxLitterSize) as Float64Array;
     this.capacity = next;
   }
 
@@ -172,6 +185,8 @@ export class PredatorPopulation {
     this.geneFertility[i] = genes[2];
     this.geneEfficiency[i] = genes[3];
     this.huntCooldown[i] = 0;
+    this.matingThreshold[i] = deriveMatingEnergyThreshold(genes[2], this.params.phenotypeRanges);
+    this.maxLitterSize[i] = deriveMaxLitterSize(genes[2], this.params.phenotypeRanges);
     this.length++;
   }
 
@@ -307,19 +322,13 @@ export class PredatorPopulation {
   reproduceAndCleanup(world: World, rng: Rng): void {
     const grid = this.rebuildGrid(world);
 
-    for (let i = 0; i < this.length; i++) {
-      const traits = this.traits(i);
-      this.matingThresholdScratch[i] = traits.matingEnergyThreshold;
-      this.maxLitterScratch[i] = traits.maxLitterSize;
-    }
-
     const events = performMating(
       this,
       grid,
       world,
       this.params,
-      (i) => this.matingThresholdScratch[i],
-      (i) => this.maxLitterScratch[i],
+      (i) => this.matingThreshold[i],
+      (i) => this.maxLitterSize[i],
       rng,
     );
 
@@ -337,6 +346,8 @@ export class PredatorPopulation {
         this.geneFertility[w] = this.geneFertility[r];
         this.geneEfficiency[w] = this.geneEfficiency[r];
         this.huntCooldown[w] = this.huntCooldown[r];
+        this.matingThreshold[w] = this.matingThreshold[r];
+        this.maxLitterSize[w] = this.maxLitterSize[r];
       }
       w++;
     }

@@ -146,3 +146,19 @@ export function derivePhenotype(
     maxLitterSize: Math.round(lerp(...ranges.maxLitterSize, fertility)),
   };
 }
+
+/**
+ * `matingEnergyThreshold`/`maxLitterSize` depend only on `fertility` (not on the other 3 genes),
+ * and a genome never changes after birth — so a population can derive these once per individual
+ * at creation and cache them, instead of recomputing full `derivePhenotype` (7 fields, one object
+ * allocation) for every individual on every `reproduceAndCleanup` call just to read 2 of them.
+ * Same formulas as `derivePhenotype`, split out so callers who only need these two don't pay for
+ * the other five.
+ */
+export function deriveMatingEnergyThreshold(fertility: number, ranges: PhenotypeRanges): number {
+  return lerp(...ranges.matingEnergyThreshold, 1 - fertility);
+}
+
+export function deriveMaxLitterSize(fertility: number, ranges: PhenotypeRanges): number {
+  return Math.round(lerp(...ranges.maxLitterSize, fertility));
+}
