@@ -1,14 +1,14 @@
 import type { Rng } from './random.ts';
 
-/** All genes are normalized to [0, 1]; phenotype mapping happens elsewhere. */
-export interface Genome {
-  speed: number;
-  vision: number;
-  fertility: number;
-  efficiency: number;
-}
-
-const GENE_KEYS = ['speed', 'vision', 'fertility', 'efficiency'] as const;
+/**
+ * Genes are normalized to [0, 1] and always handled as four named scalars — `speed, vision,
+ * fertility, efficiency`, in that exact order everywhere below — rather than a `{...}` object.
+ * Individuals live in SoA populations (parallel TypedArray columns, see herbivore.ts/predator.ts),
+ * so a per-individual genome object would mean allocating and boxing on every read; scalars let
+ * callers pass columns[i] directly. The fixed gene order matters for determinism: it's what keeps
+ * the sequence of rng() draws identical to the pre-SoA object-keyed-by-GENE_KEYS version.
+ */
+export type Genes = readonly [speed: number, vision: number, fertility: number, efficiency: number];
 
 const MUTATION_STRENGTH = 0.06;
 
@@ -21,38 +21,33 @@ function triangularNoise(rng: Rng): number {
   return (rng() + rng() + rng() - 1.5) / 1.5;
 }
 
-export function randomGenome(rng: Rng): Genome {
-  return {
-    speed: rng(),
-    vision: rng(),
-    fertility: rng(),
-    efficiency: rng(),
-  };
-}
-
 /**
  * A founder genome close to the species' average, with modest spread — the
  * initial population starts as one interbreeding species; later divergence
  * (drift + selection + mutation) is what can eventually split it in two.
  */
-export function seedGenome(rng: Rng, spread = 0.12): Genome {
+export function seedGenes(rng: Rng, spread = 0.12): Genes {
   const gene = () => clamp01(0.5 + triangularNoise(rng) * spread);
-  return {
-    speed: gene(),
-    vision: gene(),
-    fertility: gene(),
-    efficiency: gene(),
-  };
+  return [gene(), gene(), gene(), gene()];
 }
 
 /** Normalized genetic distance in [0, 1]: 0 = identical, 1 = maximally different. */
-export function genomeDistance(a: Genome, b: Genome): number {
-  let sumSq = 0;
-  for (const key of GENE_KEYS) {
-    const d = a[key] - b[key];
-    sumSq += d * d;
-  }
-  return Math.sqrt(sumSq / GENE_KEYS.length);
+export function genomeDistance(
+  speedA: number,
+  visionA: number,
+  fertilityA: number,
+  efficiencyA: number,
+  speedB: number,
+  visionB: number,
+  fertilityB: number,
+  efficiencyB: number,
+): number {
+  const dSpeed = speedA - speedB;
+  const dVision = visionA - visionB;
+  const dFertility = fertilityA - fertilityB;
+  const dEfficiency = efficiencyA - efficiencyB;
+  const sumSq = dSpeed * dSpeed + dVision * dVision + dFertility * dFertility + dEfficiency * dEfficiency;
+  return Math.sqrt(sumSq / 4);
 }
 
 /**
@@ -63,35 +58,48 @@ export function genomeDistance(a: Genome, b: Genome): number {
  * distinguishable from each other while still showing per-individual
  * genetic variation within their own band.
  */
-export function genomeToColor(genome: Genome, hueOffset = 0, hueSpan = 300): string {
-  const hue = (hueOffset + (genome.speed * 0.5 + genome.vision * 0.5) * hueSpan) % 360;
-  const saturation = 45 + genome.efficiency * 45;
-  const lightness = 40 + genome.fertility * 25;
+export function genomeToColor(
+  speed: number,
+  vision: number,
+  fertility: number,
+  efficiency: number,
+  hueOffset = 0,
+  hueSpan = 300,
+): string {
+  const hue = (hueOffset + (speed * 0.5 + vision * 0.5) * hueSpan) % 360;
+  const saturation = 45 + efficiency * 45;
+  const lightness = 40 + fertility * 25;
   return `hsl(${hue.toFixed(0)}, ${saturation.toFixed(0)}%, ${lightness.toFixed(0)}%)`;
 }
 
 /** Uniform blend-crossover of two parents' genes, no mutation applied. */
-export function crossoverGenome(a: Genome, b: Genome, rng: Rng): Genome {
-  const child = {} as Genome;
-  for (const key of GENE_KEYS) {
-    const blend = rng();
-    child[key] = clamp01(a[key] * blend + b[key] * (1 - blend));
-  }
-  return child;
+export function crossoverGenes(
+  speedA: number,
+  visionA: number,
+  fertilityA: number,
+  efficiencyA: number,
+  speedB: number,
+  visionB: number,
+  fertilityB: number,
+  efficiencyB: number,
+  rng: Rng,
+): Genes {
+  const blend = (a: number, b: number) => {
+    const t = rng();
+    return clamp01(a * t + b * (1 - t));
+  };
+  return [
+    blend(speedA, speedB),
+    blend(visionA, visionB),
+    blend(fertilityA, fertilityB),
+    blend(efficiencyA, efficiencyB),
+  ];
 }
 
 /** Applies independent small mutations to each gene. */
-export function mutateGenome(g: Genome, rng: Rng): Genome {
-  const mutated = {} as Genome;
-  for (const key of GENE_KEYS) {
-    mutated[key] = clamp01(g[key] + triangularNoise(rng) * MUTATION_STRENGTH);
-  }
-  return mutated;
-}
-
-/** Crossover followed by mutation — the full inheritance step for a single child. */
-export function inheritGenome(a: Genome, b: Genome, rng: Rng): Genome {
-  return mutateGenome(crossoverGenome(a, b, rng), rng);
+export function mutateGenes(speed: number, vision: number, fertility: number, efficiency: number, rng: Rng): Genes {
+  const mutate = (g: number) => clamp01(g + triangularNoise(rng) * MUTATION_STRENGTH);
+  return [mutate(speed), mutate(vision), mutate(fertility), mutate(efficiency)];
 }
 
 function lerp(min: number, max: number, t: number): number {
@@ -121,17 +129,20 @@ export interface PhenotypeRanges {
   maxLitterSize: readonly [number, number];
 }
 
-export function derivePhenotype(genome: Genome, ranges: PhenotypeRanges): Phenotype {
+export function derivePhenotype(
+  speed: number,
+  vision: number,
+  fertility: number,
+  efficiency: number,
+  ranges: PhenotypeRanges,
+): Phenotype {
   return {
-    visionRadius: Math.round(lerp(...ranges.visionRadius, genome.vision)),
-    moveCost: lerp(...ranges.moveCost, genome.speed),
-    swimCost: lerp(...ranges.swimCost, genome.speed),
-    restMetabolism:
-      ranges.baseRestMetabolism +
-      (genome.vision + genome.speed + genome.fertility + genome.efficiency) *
-        ranges.restMetabolismGeneFactor,
-    conversionEfficiency: lerp(...ranges.conversionEfficiency, genome.efficiency),
-    matingEnergyThreshold: lerp(...ranges.matingEnergyThreshold, 1 - genome.fertility),
-    maxLitterSize: Math.round(lerp(...ranges.maxLitterSize, genome.fertility)),
+    visionRadius: Math.round(lerp(...ranges.visionRadius, vision)),
+    moveCost: lerp(...ranges.moveCost, speed),
+    swimCost: lerp(...ranges.swimCost, speed),
+    restMetabolism: ranges.baseRestMetabolism + (vision + speed + fertility + efficiency) * ranges.restMetabolismGeneFactor,
+    conversionEfficiency: lerp(...ranges.conversionEfficiency, efficiency),
+    matingEnergyThreshold: lerp(...ranges.matingEnergyThreshold, 1 - fertility),
+    maxLitterSize: Math.round(lerp(...ranges.maxLitterSize, fertility)),
   };
 }

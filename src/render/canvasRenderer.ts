@@ -1,5 +1,4 @@
 import { Biome } from '../engine/biome.ts';
-import { genomeToColor } from '../engine/genetics.ts';
 import type { Simulation } from '../engine/simulation.ts';
 
 const BIOME_COLORS: Record<Biome, string> = {
@@ -67,20 +66,22 @@ export class CanvasRenderer {
 
     const radius = Math.max(0.6, cs * 0.32);
     for (const species of sim.herbivoreSpecies) {
-      for (const h of species.population.individuals) {
-        this.ctx.fillStyle = genomeToColor(h.genome, species.hueOffset, SPECIES_HUE_SPAN);
+      const pop = species.population;
+      for (let i = 0; i < pop.length; i++) {
+        this.ctx.fillStyle = pop.color(i, species.hueOffset, SPECIES_HUE_SPAN);
         this.ctx.beginPath();
-        this.ctx.arc(h.x * cs + cs / 2, h.y * cs + cs / 2, radius, 0, Math.PI * 2);
+        this.ctx.arc(pop.x[i] * cs + cs / 2, pop.y[i] * cs + cs / 2, radius, 0, Math.PI * 2);
         this.ctx.fill();
       }
     }
 
     const predatorRadius = Math.max(0.9, cs * 0.42);
     for (const species of sim.predatorSpecies) {
-      for (const p of species.population.individuals) {
-        this.ctx.fillStyle = genomeToColor(p.genome, species.hueOffset, SPECIES_HUE_SPAN);
+      const pop = species.population;
+      for (let i = 0; i < pop.length; i++) {
+        this.ctx.fillStyle = pop.color(i, species.hueOffset, SPECIES_HUE_SPAN);
         this.ctx.beginPath();
-        this.ctx.arc(p.x * cs + cs / 2, p.y * cs + cs / 2, predatorRadius, 0, Math.PI * 2);
+        this.ctx.arc(pop.x[i] * cs + cs / 2, pop.y[i] * cs + cs / 2, predatorRadius, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.lineWidth = Math.max(0.5, cs * 0.08);
         this.ctx.strokeStyle = '#0a0a0a';

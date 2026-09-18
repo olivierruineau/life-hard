@@ -1,20 +1,9 @@
-import { derivePhenotype, mutateGenome, seedGenome, type Genome, type Phenotype, type PhenotypeRanges } from './genetics.ts';
-import type { Herbivore, HerbivorePopulation } from './herbivore.ts';
-import { bucketByCell, chooseGreedyMove } from './movement.ts';
+import { derivePhenotype, genomeToColor, mutateGenes, seedGenes, type Phenotype, type PhenotypeRanges } from './genetics.ts';
+import type { HerbivorePopulation } from './herbivore.ts';
+import { chooseGreedyMove, SpatialGrid } from './movement.ts';
 import type { Rng } from './random.ts';
 import { performMating, type ReproductionParams } from './reproduction.ts';
 import type { World } from './world.ts';
-
-export interface Predator {
-  x: number;
-  y: number;
-  energy: number;
-  cooldown: number;
-  age: number;
-  genome: Genome;
-  /** Ticks remaining before this predator can attempt another catch (digestion). */
-  huntCooldown: number;
-}
 
 export interface PredatorParams extends ReproductionParams {
   initialEnergy: number;
@@ -92,32 +81,102 @@ function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
 }
 
-function countNearby(buckets: Map<number, number[]>, world: World, cx: number, cy: number, r: number): number {
+function countNearby(grid: SpatialGrid, world: World, cx: number, cy: number, r: number): number {
   let count = 0;
   for (let dy = -r; dy <= r; dy++) {
     for (let dx = -r; dx <= r; dx++) {
       const nx = cx + dx;
       const ny = cy + dy;
       if (!world.inBounds(nx, ny)) continue;
-      count += buckets.get(world.index(nx, ny))?.length ?? 0;
+      count += grid.cellCountAt(world.index(nx, ny));
     }
   }
   return count;
 }
 
+/** SoA storage — see HerbivorePopulation for the general rationale (parallel grown TypedArray
+ * columns instead of an array of objects). Predators additionally track `huntCooldown`. */
 export class PredatorPopulation {
-  readonly individuals: Predator[] = [];
+  length = 0;
+  private capacity = 0;
+  x: Int32Array = new Int32Array(0);
+  y: Int32Array = new Int32Array(0);
+  energy: Float64Array = new Float64Array(0);
+  cooldown: Int32Array = new Int32Array(0);
+  age: Int32Array = new Int32Array(0);
+  geneSpeed: Float64Array = new Float64Array(0);
+  geneVision: Float64Array = new Float64Array(0);
+  geneFertility: Float64Array = new Float64Array(0);
+  geneEfficiency: Float64Array = new Float64Array(0);
+  /** Ticks remaining before this predator can attempt another catch (digestion). */
+  huntCooldown: Int32Array = new Int32Array(0);
+  private matingThresholdScratch: Float64Array = new Float64Array(0);
+  private maxLitterScratch: Float64Array = new Float64Array(0);
+
+  private grid: SpatialGrid | undefined;
   private readonly params: PredatorParams;
 
   constructor(params: PredatorParams) {
     this.params = params;
   }
 
-  traits(genome: Genome): Phenotype {
-    return derivePhenotype(genome, this.params.phenotypeRanges);
+  traits(i: number): Phenotype {
+    return derivePhenotype(this.geneSpeed[i], this.geneVision[i], this.geneFertility[i], this.geneEfficiency[i], this.params.phenotypeRanges);
+  }
+
+  color(i: number, hueOffset: number, hueSpan: number): string {
+    return genomeToColor(this.geneSpeed[i], this.geneVision[i], this.geneFertility[i], this.geneEfficiency[i], hueOffset, hueSpan);
+  }
+
+  /** Rebuilds (or lazily creates) this population's reusable spatial index from current positions. */
+  rebuildGrid(world: World): SpatialGrid {
+    if (!this.grid) this.grid = new SpatialGrid(world.width * world.height);
+    this.grid.build(this.length, this.x, this.y, world.width);
+    return this.grid;
+  }
+
+  private ensureCapacity(extra: number): void {
+    if (this.length + extra <= this.capacity) return;
+    const next = Math.max(this.length + extra, this.capacity * 2, 16);
+    const grow = (arr: Int32Array | Float64Array) => {
+      const ctor = arr.constructor as { new (n: number): typeof arr };
+      const bigger = new ctor(next);
+      bigger.set(arr);
+      return bigger;
+    };
+    this.x = grow(this.x) as Int32Array;
+    this.y = grow(this.y) as Int32Array;
+    this.energy = grow(this.energy) as Float64Array;
+    this.cooldown = grow(this.cooldown) as Int32Array;
+    this.age = grow(this.age) as Int32Array;
+    this.geneSpeed = grow(this.geneSpeed) as Float64Array;
+    this.geneVision = grow(this.geneVision) as Float64Array;
+    this.geneFertility = grow(this.geneFertility) as Float64Array;
+    this.geneEfficiency = grow(this.geneEfficiency) as Float64Array;
+    this.huntCooldown = grow(this.huntCooldown) as Int32Array;
+    this.matingThresholdScratch = grow(this.matingThresholdScratch) as Float64Array;
+    this.maxLitterScratch = grow(this.maxLitterScratch) as Float64Array;
+    this.capacity = next;
+  }
+
+  private append(x: number, y: number, energy: number, genes: readonly [number, number, number, number]): void {
+    this.ensureCapacity(1);
+    const i = this.length;
+    this.x[i] = x;
+    this.y[i] = y;
+    this.energy[i] = energy;
+    this.cooldown[i] = 0;
+    this.age[i] = 0;
+    this.geneSpeed[i] = genes[0];
+    this.geneVision[i] = genes[1];
+    this.geneFertility[i] = genes[2];
+    this.geneEfficiency[i] = genes[3];
+    this.huntCooldown[i] = 0;
+    this.length++;
   }
 
   spawnRandom(world: World, count: number, rng: Rng): void {
+    this.ensureCapacity(count);
     let attempts = 0;
     let placed = 0;
     while (placed < count && attempts < count * 50) {
@@ -125,32 +184,24 @@ export class PredatorPopulation {
       const x = Math.floor(rng() * world.width);
       const y = Math.floor(rng() * world.height);
       if (world.isWater(x, y)) continue;
-      this.individuals.push({
-        x,
-        y,
-        energy: this.params.initialEnergy,
-        cooldown: 0,
-        age: 0,
-        genome: seedGenome(rng),
-        huntCooldown: 0,
-      });
+      this.append(x, y, this.params.initialEnergy, seedGenes(rng));
       placed++;
     }
   }
 
   /** Aging, movement toward under-hunted prey patches, hunting, and mating-cooldown tick-down. */
   moveAndHunt(world: World, herbivores: HerbivorePopulation, rng: Rng): void {
-    const preyBuckets = bucketByCell(herbivores.individuals, world);
-    const preyDensityAt = (x: number, y: number) => preyBuckets.get(world.index(x, y))?.length ?? 0;
+    const preyGrid = herbivores.rebuildGrid(world);
+    const preyDensityAt = (x: number, y: number) => preyGrid.cellCountAt(world.index(x, y));
     // All predators share the same greedy movement heuristic, so without this they'd all converge
     // on the single richest prey cell and permanently crowd each other out there (territoriality
     // avoids that): a predator prefers prey-rich cells that aren't already staked out by others,
     // spreading hunting pressure across multiple patches instead of hammering one hotspot.
-    const predatorBuckets = bucketByCell(this.individuals, world);
+    const predatorGrid = this.rebuildGrid(world);
     const territorialScoreAt = (x: number, y: number) => {
       const preyCount = preyDensityAt(x, y);
       if (preyCount === 0) return 0;
-      const rivals = predatorBuckets.get(world.index(x, y))?.length ?? 0;
+      const rivals = predatorGrid.cellCountAt(world.index(x, y));
       return preyCount / (1 + rivals);
     };
     const eaten = new Set<number>();
@@ -160,38 +211,38 @@ export class PredatorPopulation {
     // species grinding toward extinction together once numbers get low. Squaring the ratio makes
     // the penalty bite well before the population is already critically low, instead of only
     // near the very end.
-    const scarcityRatio = clamp(herbivores.individuals.length / this.params.scarcityReferencePopulation, 0, 1);
+    const scarcityRatio = clamp(herbivores.length / this.params.scarcityReferencePopulation, 0, 1);
     const scarcityFactor = clamp(scarcityRatio * scarcityRatio, this.params.scarcityFloor, 1);
 
-    for (const p of this.individuals) {
-      p.age++;
-      const traits = this.traits(p.genome);
-      const senescence = Math.max(0, p.age - this.params.matureAge) * this.params.senescenceRate;
-      p.energy -= traits.restMetabolism + senescence;
+    for (let i = 0; i < this.length; i++) {
+      this.age[i]++;
+      const traits = this.traits(i);
+      const senescence = Math.max(0, this.age[i] - this.params.matureAge) * this.params.senescenceRate;
+      this.energy[i] -= traits.restMetabolism + senescence;
 
       // A predator that's fed up and ready to breed switches from spreading out over prey patches
       // to actively seeking another ready predator — otherwise territoriality (needed to stop
       // hunting packs from crashing prey) also keeps well-fed adults permanently apart and the
       // population can never out-reproduce its losses.
-      const readyToMate = p.cooldown === 0 && p.energy >= traits.matingEnergyThreshold;
+      const readyToMate = this.cooldown[i] === 0 && this.energy[i] >= traits.matingEnergyThreshold;
       const scoreAt = readyToMate
         ? (x: number, y: number) => {
-            const count = predatorBuckets.get(world.index(x, y))?.length ?? 0;
-            return x === p.x && y === p.y ? count - 1 : count;
+            const count = predatorGrid.cellCountAt(world.index(x, y));
+            return x === this.x[i] && y === this.y[i] ? count - 1 : count;
           }
         : territorialScoreAt;
-      const [dx, dy] = chooseGreedyMove(world, p.x, p.y, traits.visionRadius, scoreAt, rng);
+      const [dx, dy] = chooseGreedyMove(world, this.x[i], this.y[i], traits.visionRadius, scoreAt, rng);
       if (dx !== 0 || dy !== 0) {
-        p.x += dx;
-        p.y += dy;
-        p.energy -= world.isWater(p.x, p.y) ? traits.swimCost : traits.moveCost;
+        this.x[i] += dx;
+        this.y[i] += dy;
+        this.energy[i] -= world.isWater(this.x[i], this.y[i]) ? traits.swimCost : traits.moveCost;
       }
 
-      if (p.huntCooldown > 0) {
-        p.huntCooldown--;
+      if (this.huntCooldown[i] > 0) {
+        this.huntCooldown[i]--;
       } else {
-        const prey = this.findPrey(p, world, herbivores.individuals, preyBuckets, eaten, rng);
-        if (prey) {
+        const preyIdx = this.findPrey(i, world, herbivores, preyGrid, eaten, rng);
+        if (preyIdx !== -1) {
           // Interference competition: a predator hunting alone gets its full chance, but packed
           // in among other predators (exactly what happens once population grows around a prey
           // hotspot) it competes for the same catches. This is what caps the *aggregate* harvest
@@ -199,84 +250,103 @@ export class PredatorPopulation {
           // crashing prey every time predators become numerous enough to find mates reliably.
           const nearbyPredators = Math.max(
             0,
-            countNearby(predatorBuckets, world, p.x, p.y, this.params.huntRadius) - 1,
+            countNearby(predatorGrid, world, this.x[i], this.y[i], this.params.huntRadius) - 1,
           );
           const interferenceFactor = 1 / (1 + this.params.predatorInterferenceStrength * nearbyPredators);
           const chance = clamp(
-            (this.params.catchBaseChance + this.params.catchSpeedFactor * (p.genome.speed - prey.genome.speed)) *
+            (this.params.catchBaseChance + this.params.catchSpeedFactor * (this.geneSpeed[i] - herbivores.geneSpeed[preyIdx])) *
               interferenceFactor *
               scarcityFactor,
             0.01,
             0.95,
           );
           if (rng() < chance) {
-            p.energy += prey.energy * traits.conversionEfficiency;
-            prey.energy = -1;
-            p.huntCooldown = this.params.huntCooldown;
+            this.energy[i] += herbivores.energy[preyIdx] * traits.conversionEfficiency;
+            herbivores.energy[preyIdx] = -1;
+            this.huntCooldown[i] = this.params.huntCooldown;
           }
         }
       }
 
-      if (p.cooldown > 0) p.cooldown--;
+      if (this.cooldown[i] > 0) this.cooldown[i]--;
     }
   }
 
+  /** Returns the index (into `herbivores`' columns) of a randomly chosen nearby, not-yet-eaten prey, or -1. */
   private findPrey(
-    predator: Predator,
+    i: number,
     world: World,
-    herbivoreList: Herbivore[],
-    buckets: Map<number, number[]>,
+    herbivores: HerbivorePopulation,
+    grid: SpatialGrid,
     eaten: Set<number>,
     rng: Rng,
-  ): Herbivore | null {
+  ): number {
     const r = this.params.huntRadius;
+    const px = this.x[i];
+    const py = this.y[i];
     const candidates: number[] = [];
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
-        const nx = predator.x + dx;
-        const ny = predator.y + dy;
+        const nx = px + dx;
+        const ny = py + dy;
         if (!world.inBounds(nx, ny)) continue;
-        const bucket = buckets.get(world.index(nx, ny));
-        if (!bucket) continue;
-        for (const idx of bucket) {
-          if (eaten.has(idx) || herbivoreList[idx].energy <= 0) continue;
+        const cell = world.index(nx, ny);
+        for (let k = grid.cellStart(cell); k < grid.cellEnd(cell); k++) {
+          const idx = grid.sortedIndices[k];
+          if (eaten.has(idx) || herbivores.energy[idx] <= 0) continue;
           candidates.push(idx);
         }
       }
     }
-    if (candidates.length === 0) return null;
+    if (candidates.length === 0) return -1;
     const chosen = candidates[Math.floor(rng() * candidates.length)];
     eaten.add(chosen);
-    return herbivoreList[chosen];
+    return chosen;
   }
 
   /** Mating, death (starvation or old age), and spawning newborns. */
   reproduceAndCleanup(world: World, rng: Rng): void {
+    const grid = this.rebuildGrid(world);
+
+    for (let i = 0; i < this.length; i++) {
+      const traits = this.traits(i);
+      this.matingThresholdScratch[i] = traits.matingEnergyThreshold;
+      this.maxLitterScratch[i] = traits.maxLitterSize;
+    }
+
     const events = performMating(
-      this.individuals,
+      this,
+      grid,
       world,
       this.params,
-      (p) => this.traits(p.genome).matingEnergyThreshold,
-      (p) => this.traits(p.genome).maxLitterSize,
+      (i) => this.matingThresholdScratch[i],
+      (i) => this.maxLitterScratch[i],
       rng,
     );
 
-    for (let i = this.individuals.length - 1; i >= 0; i--) {
-      const p = this.individuals[i];
-      if (p.energy <= 0 || p.age >= this.params.maxAge) this.individuals.splice(i, 1);
+    let w = 0;
+    for (let r = 0; r < this.length; r++) {
+      if (this.energy[r] <= 0 || this.age[r] >= this.params.maxAge) continue;
+      if (w !== r) {
+        this.x[w] = this.x[r];
+        this.y[w] = this.y[r];
+        this.energy[w] = this.energy[r];
+        this.cooldown[w] = this.cooldown[r];
+        this.age[w] = this.age[r];
+        this.geneSpeed[w] = this.geneSpeed[r];
+        this.geneVision[w] = this.geneVision[r];
+        this.geneFertility[w] = this.geneFertility[r];
+        this.geneEfficiency[w] = this.geneEfficiency[r];
+        this.huntCooldown[w] = this.huntCooldown[r];
+      }
+      w++;
     }
+    this.length = w;
 
     for (const event of events) {
       for (let n = 0; n < event.litterSize; n++) {
-        this.individuals.push({
-          x: event.x,
-          y: event.y,
-          energy: event.childEnergy,
-          cooldown: 0,
-          age: 0,
-          genome: mutateGenome(event.genome, rng),
-          huntCooldown: 0,
-        });
+        const genes = mutateGenes(event.geneSpeed, event.geneVision, event.geneFertility, event.geneEfficiency, rng);
+        this.append(event.x, event.y, event.childEnergy, genes);
       }
     }
 
@@ -292,7 +362,7 @@ export class PredatorPopulation {
    * by pure chance.
    */
   private immigrate(world: World, rng: Rng): void {
-    if (this.individuals.length > this.params.immigrationThreshold) return;
+    if (this.length > this.params.immigrationThreshold) return;
     if (rng() >= this.params.immigrationChancePerTick) return;
 
     let attempts = 0;
@@ -301,15 +371,7 @@ export class PredatorPopulation {
       const x = Math.floor(rng() * world.width);
       const y = Math.floor(rng() * world.height);
       if (world.isWater(x, y)) continue;
-      this.individuals.push({
-        x,
-        y,
-        energy: this.params.initialEnergy,
-        cooldown: 0,
-        age: 0,
-        genome: seedGenome(rng),
-        huntCooldown: 0,
-      });
+      this.append(x, y, this.params.initialEnergy, seedGenes(rng));
       return;
     }
   }

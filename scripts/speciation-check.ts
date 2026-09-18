@@ -3,10 +3,23 @@
 // Runs long and periodically reports genome spread + a crude 2-means split to see if a visible
 // species boundary emerges, rather than just noisy drift around one blob.
 import { Simulation, DEFAULT_SIMULATION_PARAMS } from '../src/engine/simulation.ts';
-import { genomeDistance, type Genome } from '../src/engine/genetics.ts';
+import { genomeDistance as genomeDistanceRaw } from '../src/engine/genetics.ts';
 import { DEFAULT_HERBIVORE_PARAMS } from '../src/engine/herbivore.ts';
 
+// Local, analysis-only genome shape: this script does O(sample) clustering math off the hot path,
+// so there's no need for it to touch the engine's SoA columns beyond reading them once per sample.
+interface Genome {
+  speed: number;
+  vision: number;
+  fertility: number;
+  efficiency: number;
+}
+
 const GENE_KEYS = ['speed', 'vision', 'fertility', 'efficiency'] as const;
+
+function dist(a: Genome, b: Genome): number {
+  return genomeDistanceRaw(a.speed, a.vision, a.fertility, a.efficiency, b.speed, b.vision, b.fertility, b.efficiency);
+}
 
 function mean(genomes: Genome[]): Genome {
   const m = { speed: 0, vision: 0, fertility: 0, efficiency: 0 };
@@ -21,7 +34,7 @@ function twoMeans(genomes: Genome[], seedA: Genome, seedB: Genome, iters = 15) {
   let b = seedB;
   let assign: number[] = [];
   for (let it = 0; it < iters; it++) {
-    assign = genomes.map((g) => (genomeDistance(g, a) <= genomeDistance(g, b) ? 0 : 1));
+    assign = genomes.map((g) => (dist(g, a) <= dist(g, b) ? 0 : 1));
     const groupA = genomes.filter((_, i) => assign[i] === 0);
     const groupB = genomes.filter((_, i) => assign[i] === 1);
     if (groupA.length === 0 || groupB.length === 0) break;
@@ -55,9 +68,22 @@ console.log('tick,population,maxPairDist(sample),clusterSep,clusterSpreadA,clust
 
 const grazers = sim.herbivoreSpecies[0].population;
 
+function readGenomes(): Genome[] {
+  const genomes: Genome[] = [];
+  for (let i = 0; i < grazers.length; i++) {
+    genomes.push({
+      speed: grazers.geneSpeed[i],
+      vision: grazers.geneVision[i],
+      fertility: grazers.geneFertility[i],
+      efficiency: grazers.geneEfficiency[i],
+    });
+  }
+  return genomes;
+}
+
 for (let t = 0; t <= ticks; t++) {
   if (t % logEvery === 0) {
-    const genomes = grazers.individuals.map((h) => h.genome);
+    const genomes = readGenomes();
     if (genomes.length < 4) {
       console.log(`${t},${genomes.length},-,-,-,-,-`);
       sim.step();
@@ -72,7 +98,7 @@ for (let t = 0; t <= ticks; t++) {
     let totalPairs = 0;
     for (let i = 0; i < sample.length; i++) {
       for (let j = i + 1; j < sample.length; j++) {
-        const d = genomeDistance(sample[i], sample[j]);
+        const d = dist(sample[i], sample[j]);
         if (d > maxDist) maxDist = d;
         totalPairs++;
         if (d > DEFAULT_HERBIVORE_PARAMS.maxMatingDistance) incompatiblePairs++;
@@ -85,16 +111,16 @@ for (let t = 0; t <= ticks; t++) {
     let bestD = -1;
     for (let i = 0; i < sample.length; i++) {
       for (let j = i + 1; j < sample.length; j++) {
-        const d = genomeDistance(sample[i], sample[j]);
+        const d = dist(sample[i], sample[j]);
         if (d > bestD) { bestD = d; seedA = sample[i]; seedB = sample[j]; }
       }
     }
     const { a, b, assign } = twoMeans(genomes, seedA, seedB);
     const groupA = genomes.filter((_, i) => assign[i] === 0);
     const groupB = genomes.filter((_, i) => assign[i] === 1);
-    const spreadA = groupA.length ? groupA.reduce((s, g) => s + genomeDistance(g, a), 0) / groupA.length : 0;
-    const spreadB = groupB.length ? groupB.reduce((s, g) => s + genomeDistance(g, b), 0) / groupB.length : 0;
-    const clusterSep = genomeDistance(a, b);
+    const spreadA = groupA.length ? groupA.reduce((s, g) => s + dist(g, a), 0) / groupA.length : 0;
+    const spreadB = groupB.length ? groupB.reduce((s, g) => s + dist(g, b), 0) / groupB.length : 0;
+    const clusterSep = dist(a, b);
 
     console.log(
       `${t},${genomes.length},${maxDist.toFixed(3)},${clusterSep.toFixed(3)},${spreadA.toFixed(3)},${spreadB.toFixed(3)},${(incompatiblePairs / totalPairs).toFixed(3)}`,

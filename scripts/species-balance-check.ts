@@ -9,13 +9,27 @@ const sim = new Simulation({ ...DEFAULT_SIMULATION_PARAMS, seed });
 const forestIndex = Object.values(Biome).indexOf(Biome.Forest);
 const extinctLogged = new Set<string>();
 
-function avgSpeed(inds: { genome: { speed: number } }[]): number {
-  return inds.length ? inds.reduce((s, i) => s + i.genome.speed, 0) / inds.length : 0;
+interface SoAPopulation {
+  length: number;
+  x: Int32Array;
+  y: Int32Array;
+  geneSpeed: Float32Array;
 }
 
-function forestFraction(inds: { x: number; y: number }[]): number {
-  if (!inds.length) return 0;
-  return inds.filter((i) => sim.world.biome[sim.world.index(i.x, i.y)] === forestIndex).length / inds.length;
+function avgSpeed(pop: SoAPopulation): number {
+  if (!pop.length) return 0;
+  let sum = 0;
+  for (let i = 0; i < pop.length; i++) sum += pop.geneSpeed[i];
+  return sum / pop.length;
+}
+
+function forestFraction(pop: SoAPopulation): number {
+  if (!pop.length) return 0;
+  let inForest = 0;
+  for (let i = 0; i < pop.length; i++) {
+    if (sim.world.biome[sim.world.index(pop.x[i], pop.y[i])] === forestIndex) inForest++;
+  }
+  return inForest / pop.length;
 }
 
 console.log(
@@ -32,16 +46,16 @@ for (let t = 0; t <= ticks; t++) {
       [
         t,
         ...sim.herbivoreSpecies.flatMap((s) => [
-          s.population.individuals.length,
-          avgSpeed(s.population.individuals).toFixed(3),
-          forestFraction(s.population.individuals).toFixed(2),
+          s.population.length,
+          avgSpeed(s.population).toFixed(3),
+          forestFraction(s.population).toFixed(2),
         ]),
-        ...sim.predatorSpecies.map((s) => s.population.individuals.length),
+        ...sim.predatorSpecies.map((s) => s.population.length),
       ].join(','),
     );
   }
   for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies]) {
-    if (s.population.individuals.length === 0 && !extinctLogged.has(s.id)) {
+    if (s.population.length === 0 && !extinctLogged.has(s.id)) {
       console.log(`EXTINCT: ${s.id} at tick ${t}`);
       extinctLogged.add(s.id);
     }

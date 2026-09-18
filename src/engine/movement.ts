@@ -77,17 +77,65 @@ export function randomLandStep(world: World, x: number, y: number, rng: Rng): [n
   return [0, 0];
 }
 
-/** Groups individuals' indices by the cell they occupy. */
-export function bucketByCell<T extends { x: number; y: number }>(
-  individuals: T[],
-  world: World,
-): Map<number, number[]> {
-  const buckets = new Map<number, number[]>();
-  for (let i = 0; i < individuals.length; i++) {
-    const key = world.index(individuals[i].x, individuals[i].y);
-    const bucket = buckets.get(key);
-    if (bucket) bucket.push(i);
-    else buckets.set(key, [i]);
+/**
+ * Groups individuals' indices by the cell they occupy, in flat reusable TypedArrays instead of a
+ * `Map<number, number[]>` rebuilt from scratch on every call — this is on the hot path up to
+ * several times per tick per population (prey lookup, self-lookup for territoriality/mate-seeking,
+ * and again inside performMating), so avoiding a fresh Map + one array-per-occupied-cell allocation
+ * each time matters. `build` is a two-pass counting sort: a histogram pass, a prefix sum, then a
+ * scatter pass that writes indices in the same 0..length-1 order they were scanned in — so within
+ * a cell, `sortedIndices` comes out in the same relative order the old Map-of-arrays produced
+ * (insertion order), which callers rely on for reproducible tie-breaking/candidate order.
+ */
+export class SpatialGrid {
+  sortedIndices: Int32Array;
+  private indicesCapacity: number;
+  private readonly cellStartArr: Int32Array;
+  private readonly counts: Int32Array;
+  private readonly cursor: Int32Array;
+  private readonly cellCount: number;
+
+  constructor(cellCount: number, initialCapacity = 64) {
+    this.cellCount = cellCount;
+    this.cellStartArr = new Int32Array(cellCount + 1);
+    this.counts = new Int32Array(cellCount);
+    this.cursor = new Int32Array(cellCount);
+    this.indicesCapacity = initialCapacity;
+    this.sortedIndices = new Int32Array(initialCapacity);
   }
-  return buckets;
+
+  build(length: number, xs: Int32Array, ys: Int32Array, width: number): void {
+    if (length > this.indicesCapacity) {
+      this.indicesCapacity = Math.max(length, this.indicesCapacity * 2);
+      this.sortedIndices = new Int32Array(this.indicesCapacity);
+    }
+
+    this.counts.fill(0);
+    for (let i = 0; i < length; i++) this.counts[ys[i] * width + xs[i]]++;
+
+    let sum = 0;
+    for (let c = 0; c < this.cellCount; c++) {
+      this.cellStartArr[c] = sum;
+      this.cursor[c] = sum;
+      sum += this.counts[c];
+    }
+    this.cellStartArr[this.cellCount] = sum;
+
+    for (let i = 0; i < length; i++) {
+      const cell = ys[i] * width + xs[i];
+      this.sortedIndices[this.cursor[cell]++] = i;
+    }
+  }
+
+  cellStart(cell: number): number {
+    return this.cellStartArr[cell];
+  }
+
+  cellEnd(cell: number): number {
+    return this.cellStartArr[cell + 1];
+  }
+
+  cellCountAt(cell: number): number {
+    return this.cellStartArr[cell + 1] - this.cellStartArr[cell];
+  }
 }

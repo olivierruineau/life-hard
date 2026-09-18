@@ -177,7 +177,7 @@ function renderFrame(): void {
   statSpecies.innerHTML = [...sim.herbivoreSpecies, ...sim.predatorSpecies]
     .map(
       (s) =>
-        `<span style="color: hsl(${s.hueOffset}, 70%, 55%)">${s.label}: <strong>${s.population.individuals.length}</strong></span>`,
+        `<span style="color: hsl(${s.hueOffset}, 70%, 55%)">${s.label}: <strong>${s.population.length}</strong></span>`,
     )
     .join('');
   drawChart();
@@ -206,7 +206,7 @@ function recordHistory(): void {
   for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies]) {
     speciesHue.set(s.id, s.hueOffset);
     const history = speciesHistory.get(s.id) ?? [];
-    history.push(s.population.individuals.length);
+    history.push(s.population.length);
     speciesHistory.set(s.id, history);
   }
 }

@@ -1,13 +1,6 @@
 import { Biome } from './biome.ts';
-import {
-  derivePhenotype,
-  mutateGenome,
-  seedGenome,
-  type Genome,
-  type Phenotype,
-  type PhenotypeRanges,
-} from './genetics.ts';
-import { chooseGreedyMove } from './movement.ts';
+import { derivePhenotype, genomeToColor, mutateGenes, seedGenes, type Phenotype, type PhenotypeRanges } from './genetics.ts';
+import { chooseGreedyMove, SpatialGrid } from './movement.ts';
 import type { Rng } from './random.ts';
 import { performMating, type ReproductionParams } from './reproduction.ts';
 import type { World } from './world.ts';
@@ -20,17 +13,6 @@ import type { World } from './world.ts';
  * biome on the map regardless of niche, since raw biomass quantity is all `chooseGreedyMove` sees.
  */
 export type BiomeAffinity = Partial<Record<Biome, number>>;
-
-export interface Herbivore {
-  x: number;
-  y: number;
-  energy: number;
-  /** Ticks remaining before this individual can mate again. */
-  cooldown: number;
-  /** Age in ticks. */
-  age: number;
-  genome: Genome;
-}
 
 export interface HerbivoreParams extends ReproductionParams {
   initialEnergy: number;
@@ -93,19 +75,85 @@ export const DEFAULT_HERBIVORE_PARAMS: HerbivoreParams = {
   immigrationChancePerTick: 0.03,
 };
 
+/**
+ * SoA storage: one Herbivore used to be a plain object; a population is now parallel TypedArray
+ * columns indexed 0..length-1, grown (doubling, copy via `.set`) when capacity is exceeded. This
+ * mirrors how `World` already stores its per-cell grid (public readonly-in-spirit TypedArrays),
+ * just resizable since population count changes every tick. `length` is the live individual
+ * count; everything at index >= length in the backing arrays is stale/garbage.
+ */
 export class HerbivorePopulation {
-  readonly individuals: Herbivore[] = [];
+  length = 0;
+  private capacity = 0;
+  x: Int32Array = new Int32Array(0);
+  y: Int32Array = new Int32Array(0);
+  energy: Float64Array = new Float64Array(0);
+  cooldown: Int32Array = new Int32Array(0);
+  age: Int32Array = new Int32Array(0);
+  geneSpeed: Float64Array = new Float64Array(0);
+  geneVision: Float64Array = new Float64Array(0);
+  geneFertility: Float64Array = new Float64Array(0);
+  geneEfficiency: Float64Array = new Float64Array(0);
+  // Scratch columns recomputed each reproduceAndCleanup call (see performMating) — grown alongside
+  // the rest so no per-tick allocation once capacity settles.
+  private matingThresholdScratch: Float64Array = new Float64Array(0);
+  private maxLitterScratch: Float64Array = new Float64Array(0);
+
+  private grid: SpatialGrid | undefined;
   private readonly params: HerbivoreParams;
 
   constructor(params: HerbivoreParams) {
     this.params = params;
   }
 
-  traits(genome: Genome): Phenotype {
-    return derivePhenotype(genome, this.params.phenotypeRanges);
+  traits(i: number): Phenotype {
+    return derivePhenotype(this.geneSpeed[i], this.geneVision[i], this.geneFertility[i], this.geneEfficiency[i], this.params.phenotypeRanges);
+  }
+
+  color(i: number, hueOffset: number, hueSpan: number): string {
+    return genomeToColor(this.geneSpeed[i], this.geneVision[i], this.geneFertility[i], this.geneEfficiency[i], hueOffset, hueSpan);
+  }
+
+  private ensureCapacity(extra: number): void {
+    if (this.length + extra <= this.capacity) return;
+    const next = Math.max(this.length + extra, this.capacity * 2, 16);
+    const grow = (arr: Int32Array | Float64Array) => {
+      const ctor = arr.constructor as { new (n: number): typeof arr };
+      const bigger = new ctor(next);
+      bigger.set(arr);
+      return bigger;
+    };
+    this.x = grow(this.x) as Int32Array;
+    this.y = grow(this.y) as Int32Array;
+    this.energy = grow(this.energy) as Float64Array;
+    this.cooldown = grow(this.cooldown) as Int32Array;
+    this.age = grow(this.age) as Int32Array;
+    this.geneSpeed = grow(this.geneSpeed) as Float64Array;
+    this.geneVision = grow(this.geneVision) as Float64Array;
+    this.geneFertility = grow(this.geneFertility) as Float64Array;
+    this.geneEfficiency = grow(this.geneEfficiency) as Float64Array;
+    this.matingThresholdScratch = grow(this.matingThresholdScratch) as Float64Array;
+    this.maxLitterScratch = grow(this.maxLitterScratch) as Float64Array;
+    this.capacity = next;
+  }
+
+  private append(x: number, y: number, energy: number, genes: readonly [number, number, number, number]): void {
+    this.ensureCapacity(1);
+    const i = this.length;
+    this.x[i] = x;
+    this.y[i] = y;
+    this.energy[i] = energy;
+    this.cooldown[i] = 0;
+    this.age[i] = 0;
+    this.geneSpeed[i] = genes[0];
+    this.geneVision[i] = genes[1];
+    this.geneFertility[i] = genes[2];
+    this.geneEfficiency[i] = genes[3];
+    this.length++;
   }
 
   spawnRandom(world: World, count: number, rng: Rng): void {
+    this.ensureCapacity(count);
     let attempts = 0;
     let placed = 0;
     while (placed < count && attempts < count * 50) {
@@ -113,14 +161,7 @@ export class HerbivorePopulation {
       const x = Math.floor(rng() * world.width);
       const y = Math.floor(rng() * world.height);
       if (world.isWater(x, y)) continue;
-      this.individuals.push({
-        x,
-        y,
-        energy: this.params.initialEnergy,
-        cooldown: 0,
-        age: 0,
-        genome: seedGenome(rng),
-      });
+      this.append(x, y, this.params.initialEnergy, seedGenes(rng));
       placed++;
     }
   }
@@ -132,54 +173,77 @@ export class HerbivorePopulation {
       ? (x: number, y: number) => world.biomass[world.index(x, y)] * (affinity[world.biomeAt(x, y)] ?? 1)
       : (x: number, y: number) => world.biomass[world.index(x, y)];
 
-    for (const h of this.individuals) {
-      h.age++;
-      const traits = this.traits(h.genome);
-      const senescence = Math.max(0, h.age - this.params.matureAge) * this.params.senescenceRate;
-      h.energy -= traits.restMetabolism + senescence;
+    for (let i = 0; i < this.length; i++) {
+      this.age[i]++;
+      const traits = this.traits(i);
+      const senescence = Math.max(0, this.age[i] - this.params.matureAge) * this.params.senescenceRate;
+      this.energy[i] -= traits.restMetabolism + senescence;
 
-      const [dx, dy] = chooseGreedyMove(world, h.x, h.y, traits.visionRadius, scoreAt, rng, FORAGING_STAY_THRESHOLD);
+      const [dx, dy] = chooseGreedyMove(world, this.x[i], this.y[i], traits.visionRadius, scoreAt, rng, FORAGING_STAY_THRESHOLD);
       if (dx !== 0 || dy !== 0) {
-        h.x += dx;
-        h.y += dy;
-        h.energy -= world.isWater(h.x, h.y) ? traits.swimCost : traits.moveCost;
+        this.x[i] += dx;
+        this.y[i] += dy;
+        this.energy[i] -= world.isWater(this.x[i], this.y[i]) ? traits.swimCost : traits.moveCost;
       }
 
-      if (!world.isWater(h.x, h.y)) {
-        const eaten = world.consume(h.x, h.y, this.params.eatRate);
-        h.energy += eaten * traits.conversionEfficiency;
+      if (!world.isWater(this.x[i], this.y[i])) {
+        const eaten = world.consume(this.x[i], this.y[i], this.params.eatRate);
+        this.energy[i] += eaten * traits.conversionEfficiency;
       }
 
-      if (h.cooldown > 0) h.cooldown--;
+      if (this.cooldown[i] > 0) this.cooldown[i]--;
     }
+  }
+
+  /** Rebuilds (or lazily creates) this population's reusable spatial index from current positions. */
+  rebuildGrid(world: World): SpatialGrid {
+    if (!this.grid) this.grid = new SpatialGrid(world.width * world.height);
+    this.grid.build(this.length, this.x, this.y, world.width);
+    return this.grid;
   }
 
   /** Mating, death (starvation, predation, or old age), and spawning newborns. */
   reproduceAndCleanup(world: World, rng: Rng): void {
+    const grid = this.rebuildGrid(world);
+
+    for (let i = 0; i < this.length; i++) {
+      const traits = this.traits(i);
+      this.matingThresholdScratch[i] = traits.matingEnergyThreshold;
+      this.maxLitterScratch[i] = traits.maxLitterSize;
+    }
+
     const events = performMating(
-      this.individuals,
+      this,
+      grid,
       world,
       this.params,
-      (h) => this.traits(h.genome).matingEnergyThreshold,
-      (h) => this.traits(h.genome).maxLitterSize,
+      (i) => this.matingThresholdScratch[i],
+      (i) => this.maxLitterScratch[i],
       rng,
     );
 
-    for (let i = this.individuals.length - 1; i >= 0; i--) {
-      const h = this.individuals[i];
-      if (h.energy <= 0 || h.age >= this.params.maxAge) this.individuals.splice(i, 1);
+    let w = 0;
+    for (let r = 0; r < this.length; r++) {
+      if (this.energy[r] <= 0 || this.age[r] >= this.params.maxAge) continue;
+      if (w !== r) {
+        this.x[w] = this.x[r];
+        this.y[w] = this.y[r];
+        this.energy[w] = this.energy[r];
+        this.cooldown[w] = this.cooldown[r];
+        this.age[w] = this.age[r];
+        this.geneSpeed[w] = this.geneSpeed[r];
+        this.geneVision[w] = this.geneVision[r];
+        this.geneFertility[w] = this.geneFertility[r];
+        this.geneEfficiency[w] = this.geneEfficiency[r];
+      }
+      w++;
     }
+    this.length = w;
 
     for (const event of events) {
       for (let n = 0; n < event.litterSize; n++) {
-        this.individuals.push({
-          x: event.x,
-          y: event.y,
-          energy: event.childEnergy,
-          cooldown: 0,
-          age: 0,
-          genome: mutateGenome(event.genome, rng),
-        });
+        const genes = mutateGenes(event.geneSpeed, event.geneVision, event.geneFertility, event.geneEfficiency, rng);
+        this.append(event.x, event.y, event.childEnergy, genes);
       }
     }
 
@@ -187,7 +251,7 @@ export class HerbivorePopulation {
   }
 
   private immigrate(world: World, rng: Rng): void {
-    if (this.individuals.length > this.params.immigrationThreshold) return;
+    if (this.length > this.params.immigrationThreshold) return;
     if (rng() >= this.params.immigrationChancePerTick) return;
 
     let attempts = 0;
@@ -196,14 +260,7 @@ export class HerbivorePopulation {
       const x = Math.floor(rng() * world.width);
       const y = Math.floor(rng() * world.height);
       if (world.isWater(x, y)) continue;
-      this.individuals.push({
-        x,
-        y,
-        energy: this.params.initialEnergy,
-        cooldown: 0,
-        age: 0,
-        genome: seedGenome(rng),
-      });
+      this.append(x, y, this.params.initialEnergy, seedGenes(rng));
       return;
     }
   }

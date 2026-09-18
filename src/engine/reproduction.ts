@@ -1,14 +1,19 @@
-import { bucketByCell } from './movement.ts';
-import { crossoverGenome, genomeDistance, type Genome } from './genetics.ts';
+import type { SpatialGrid } from './movement.ts';
+import { crossoverGenes, genomeDistance } from './genetics.ts';
 import type { Rng } from './random.ts';
 import type { World } from './world.ts';
 
-export interface Mate {
-  x: number;
-  y: number;
-  energy: number;
-  cooldown: number;
-  genome: Genome;
+/** Structural view any SoA population (herbivore or predator) satisfies. */
+export interface MatePopulation {
+  length: number;
+  x: Int32Array;
+  y: Int32Array;
+  energy: Float64Array;
+  cooldown: Int32Array;
+  geneSpeed: Float64Array;
+  geneVision: Float64Array;
+  geneFertility: Float64Array;
+  geneEfficiency: Float64Array;
 }
 
 export interface ReproductionParams {
@@ -32,7 +37,10 @@ export interface MatingEvent {
   y: number;
   litterSize: number;
   childEnergy: number;
-  genome: Genome;
+  geneSpeed: number;
+  geneVision: number;
+  geneFertility: number;
+  geneEfficiency: number;
 }
 
 function litterCost(litterSize: number, params: ReproductionParams): number {
@@ -40,43 +48,45 @@ function litterCost(litterSize: number, params: ReproductionParams): number {
 }
 
 /**
- * Finds compatible eligible pairs among `individuals` (grouped by proximity)
- * and settles each mating: pays the (litter-size-dependent) energy cost from
- * both parents, sets their cooldown, and returns one event per successful
- * pairing describing the litter to spawn.
+ * Finds compatible eligible pairs among `pop` (grouped by proximity via the pre-built `grid`,
+ * which the caller is responsible for having rebuilt from `pop`'s current positions this tick)
+ * and settles each mating: pays the (litter-size-dependent) energy cost from both parents, sets
+ * their cooldown, and returns one event per successful pairing describing the litter to spawn.
  */
-export function performMating<T extends Mate>(
-  individuals: T[],
+export function performMating(
+  pop: MatePopulation,
+  grid: SpatialGrid,
   world: World,
   params: ReproductionParams,
-  matingEnergyThreshold: (individual: T) => number,
-  maxLitterSizeFor: (individual: T) => number,
+  matingEnergyThreshold: (i: number) => number,
+  maxLitterSizeFor: (i: number) => number,
   rng: Rng,
 ): MatingEvent[] {
-  const buckets = bucketByCell(individuals, world);
-  const isEligible = (ind: T) => ind.cooldown === 0 && ind.energy >= matingEnergyThreshold(ind);
+  const isEligible = (i: number) => pop.cooldown[i] === 0 && pop.energy[i] >= matingEnergyThreshold(i);
   const paired = new Set<number>();
   const events: MatingEvent[] = [];
   const r = params.matingRadius;
 
-  for (let i = 0; i < individuals.length; i++) {
+  for (let i = 0; i < pop.length; i++) {
     if (paired.has(i)) continue;
-    const ind = individuals[i];
-    if (!isEligible(ind)) continue;
+    if (!isEligible(i)) continue;
 
     let partnerIndex = -1;
     outer: for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
-        const nx = ind.x + dx;
-        const ny = ind.y + dy;
+        const nx = pop.x[i] + dx;
+        const ny = pop.y[i] + dy;
         if (!world.inBounds(nx, ny)) continue;
-        const bucket = buckets.get(world.index(nx, ny));
-        if (!bucket) continue;
-        for (const j of bucket) {
+        const cell = world.index(nx, ny);
+        for (let k = grid.cellStart(cell); k < grid.cellEnd(cell); k++) {
+          const j = grid.sortedIndices[k];
           if (j === i || paired.has(j)) continue;
-          const candidate = individuals[j];
-          if (!isEligible(candidate)) continue;
-          if (genomeDistance(ind.genome, candidate.genome) > params.maxMatingDistance) continue;
+          if (!isEligible(j)) continue;
+          const dist = genomeDistance(
+            pop.geneSpeed[i], pop.geneVision[i], pop.geneFertility[i], pop.geneEfficiency[i],
+            pop.geneSpeed[j], pop.geneVision[j], pop.geneFertility[j], pop.geneEfficiency[j],
+          );
+          if (dist > params.maxMatingDistance) continue;
           partnerIndex = j;
           break outer;
         }
@@ -84,29 +94,38 @@ export function performMating<T extends Mate>(
     }
 
     if (partnerIndex === -1) continue;
-    const partner = individuals[partnerIndex];
+    const j = partnerIndex;
 
     const maxLitter = Math.max(
       params.minLitterSize,
-      Math.round((maxLitterSizeFor(ind) + maxLitterSizeFor(partner)) / 2),
+      Math.round((maxLitterSizeFor(i) + maxLitterSizeFor(j)) / 2),
     );
     const litterSize = params.minLitterSize + Math.floor(rng() * (maxLitter - params.minLitterSize + 1));
     const totalCost = litterCost(litterSize, params);
     const costEach = totalCost / 2;
 
-    ind.energy -= costEach;
-    partner.energy -= costEach;
-    ind.cooldown = params.reproductionCooldown;
-    partner.cooldown = params.reproductionCooldown;
+    pop.energy[i] -= costEach;
+    pop.energy[j] -= costEach;
+    pop.cooldown[i] = params.reproductionCooldown;
+    pop.cooldown[j] = params.reproductionCooldown;
     paired.add(i);
-    paired.add(partnerIndex);
+    paired.add(j);
+
+    const [geneSpeed, geneVision, geneFertility, geneEfficiency] = crossoverGenes(
+      pop.geneSpeed[i], pop.geneVision[i], pop.geneFertility[i], pop.geneEfficiency[i],
+      pop.geneSpeed[j], pop.geneVision[j], pop.geneFertility[j], pop.geneEfficiency[j],
+      rng,
+    );
 
     events.push({
-      x: ind.x,
-      y: ind.y,
+      x: pop.x[i],
+      y: pop.y[i],
       litterSize,
       childEnergy: (totalCost / litterSize) * params.childEnergyEfficiency,
-      genome: crossoverGenome(ind.genome, partner.genome, rng),
+      geneSpeed,
+      geneVision,
+      geneFertility,
+      geneEfficiency,
     });
   }
 
