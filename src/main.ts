@@ -30,6 +30,8 @@ app.innerHTML = `
         <label class="control">Niveau d'eau<input id="p-water" type="number" min="0" max="0.9" step="0.05" /></label>
         <label class="control">Relief (octaves)<input id="p-relief" type="number" min="1" max="8" step="1" /></label>
         <label class="control">Productivité du sol<input id="p-soil" type="number" min="0.2" max="3" step="0.1" /></label>
+        <label class="control">Durée de saison (ticks)<input id="p-season-period" type="number" min="0" max="5000" step="100" /></label>
+        <label class="control">Amplitude saisonnière<input id="p-season-amplitude" type="number" min="0" max="0.8" step="0.05" /></label>
         ${herbivoreControls}
         ${predatorControls}
         <div id="actions">
@@ -48,6 +50,7 @@ app.innerHTML = `
   <div id="canvas-wrap"><canvas id="sim-canvas"></canvas></div>
   <div id="stats">
     <span>Tick: <strong id="stat-tick">0</strong></span>
+    <span id="stat-season"></span>
     <span id="stat-species"></span>
   </div>
   <div id="chart-controls">
@@ -66,6 +69,8 @@ function readParams(): SimulationParams {
     waterLevel: num('p-water'),
     reliefOctaves: num('p-relief'),
     soilProductivity: num('p-soil'),
+    seasonPeriod: num('p-season-period'),
+    seasonAmplitude: num('p-season-amplitude'),
     herbivoreSpecies: HERBIVORE_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: num(`p-herb-${p.id}`) })),
     predatorSpecies: PREDATOR_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: num(`p-pred-${p.id}`) })),
   };
@@ -78,6 +83,8 @@ function writeParams(params: SimulationParams): void {
   (document.getElementById('p-water') as HTMLInputElement).value = String(params.waterLevel);
   (document.getElementById('p-relief') as HTMLInputElement).value = String(params.reliefOctaves);
   (document.getElementById('p-soil') as HTMLInputElement).value = String(params.soilProductivity);
+  (document.getElementById('p-season-period') as HTMLInputElement).value = String(params.seasonPeriod);
+  (document.getElementById('p-season-amplitude') as HTMLInputElement).value = String(params.seasonAmplitude);
   for (const s of params.herbivoreSpecies) {
     (document.getElementById(`p-herb-${s.id}`) as HTMLInputElement).value = String(s.initialCount);
   }
@@ -149,9 +156,23 @@ function restart(): void {
   renderFrame();
 }
 
+const SEASON_LABELS = ['Hiver', 'Printemps', 'Été', 'Automne'];
+
+/** Hemispheres are always in opposite season (see World.seasonalFactorAt); quadrant-of-cycle is
+ * enough to label them, no need to match the exact sine phase used for the biomassMax multiplier. */
+function seasonLabel(tick: number, period: number): string {
+  if (period <= 0) return '';
+  const phase = (tick % period) / period;
+  const quadrant = Math.floor(phase * 4) % 4;
+  const north = SEASON_LABELS[quadrant];
+  const south = SEASON_LABELS[(quadrant + 2) % 4];
+  return `Saison — nord: ${north} · sud: ${south}`;
+}
+
 function renderFrame(): void {
   renderer.render(sim);
   (document.getElementById('stat-tick') as HTMLElement).textContent = String(sim.tick);
+  (document.getElementById('stat-season') as HTMLElement).textContent = seasonLabel(sim.tick, sim.params.seasonPeriod);
   const statSpecies = document.getElementById('stat-species') as HTMLElement;
   statSpecies.innerHTML = [...sim.herbivoreSpecies, ...sim.predatorSpecies]
     .map(

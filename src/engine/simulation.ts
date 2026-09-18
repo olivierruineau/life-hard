@@ -177,6 +177,10 @@ export interface SimulationParams {
   reliefOctaves: number;
   /** Global multiplier on every biome's max biomass (soil fertility), applied uniformly. */
   soilProductivity: number;
+  /** Ticks for one full seasonal cycle. 0 disables seasons. */
+  seasonPeriod: number;
+  /** Max fractional swing (0-1) a seasonal cycle applies to biomassMax at the map's edges. */
+  seasonAmplitude: number;
   herbivoreSpecies: SpeciesSelection[];
   predatorSpecies: SpeciesSelection[];
 }
@@ -188,6 +192,8 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   waterLevel: 0.35,
   reliefOctaves: 5,
   soilProductivity: 1,
+  seasonPeriod: 1200,
+  seasonAmplitude: 0.4,
   herbivoreSpecies: HERBIVORE_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
   predatorSpecies: PREDATOR_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
 };
@@ -210,6 +216,8 @@ export class Simulation {
       waterLevel: params.waterLevel,
       reliefOctaves: params.reliefOctaves,
       soilProductivity: params.soilProductivity,
+      seasonPeriod: params.seasonPeriod,
+      seasonAmplitude: params.seasonAmplitude,
     });
 
     this.herbivoreSpecies = [];
@@ -243,7 +251,7 @@ export class Simulation {
   }
 
   step(): void {
-    this.world.step();
+    this.world.step(this.tick);
     for (const h of this.herbivoreSpecies) h.population.moveAndFeed(this.world, this.rng);
     for (const p of this.predatorSpecies) p.population.moveAndHunt(this.world, p.prey, this.rng);
     for (const h of this.herbivoreSpecies) h.population.reproduceAndCleanup(this.world, this.rng);

@@ -50,6 +50,12 @@ export class CanvasRenderer {
         this.ctx.fillStyle = BIOME_COLORS[biome];
         this.ctx.fillRect(x * cs, y * cs, cs, cs);
 
+        const fertility = world.fertility[i];
+        if (fertility < 1) {
+          this.ctx.fillStyle = `rgba(120, 90, 40, ${(1 - fertility) * 0.5})`;
+          this.ctx.fillRect(x * cs, y * cs, cs, cs);
+        }
+
         const max = world.biomassMax[i];
         if (max > 0) {
           const fraction = world.biomass[i] / max;
