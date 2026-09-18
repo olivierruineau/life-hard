@@ -158,16 +158,12 @@ export const PREDATOR_SPECIES_PRESETS: PredatorSpeciesPreset[] = [
     id: 'forest-stalker',
     label: 'Prédateurs (forêt)',
     hueOffset: 270,
-    // Disabled by default: forest-browser is a slow K-selected breeder (high mating threshold,
-    // low eatRate) that can't out-reproduce any predation pressure strong enough for a predator to
-    // feed itself — every catch-rate tuning tried (matching, then well below, the validated
-    // plains-courser numbers) still crashed the browser to extinction within ~1000 ticks in
-    // isolation testing. The preset is kept as a working example of a second predator species (set
-    // its initial count > 0 to enable it) but needs a real balance pass — likely a faster-breeding
-    // browser variant — before it's viable as a default. Iterate the way predator.ts's own balance
-    // was found: a tsx script zeroing every species' initialCount except the pair under test, run
-    // for several thousand ticks per candidate parameter set (see scripts/balance-check.ts).
-    defaultInitialCount: 0,
+    // Re-validated with the current catchBaseChance/scarcityReferencePopulation/immigrationThreshold
+    // tuning (see FOREST_STALKER_PARAMS above): stable across 8000+ ticks both in isolation with
+    // forest-browser and alongside the plains pair, in and out of scarcity dips, thanks to the
+    // low-rate immigration trickle recovering it after near-extinctions rather than the population
+    // ever hard-crashing to 0.
+    defaultInitialCount: 15,
     params: FOREST_STALKER_PARAMS,
     preyId: 'forest-browser',
   },
