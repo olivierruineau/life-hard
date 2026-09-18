@@ -179,6 +179,8 @@ export interface SimulationParams {
   seed: string;
   waterLevel: number;
   reliefOctaves: number;
+  /** Global multiplier on every biome's max biomass (soil fertility), applied uniformly. */
+  soilProductivity: number;
   herbivoreSpecies: SpeciesSelection[];
   predatorSpecies: SpeciesSelection[];
 }
@@ -189,6 +191,7 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   seed: 'life-hard',
   waterLevel: 0.35,
   reliefOctaves: 5,
+  soilProductivity: 1,
   herbivoreSpecies: HERBIVORE_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
   predatorSpecies: PREDATOR_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
 };
@@ -210,6 +213,7 @@ export class Simulation {
       rng: this.rng,
       waterLevel: params.waterLevel,
       reliefOctaves: params.reliefOctaves,
+      soilProductivity: params.soilProductivity,
     });
 
     this.herbivoreSpecies = [];

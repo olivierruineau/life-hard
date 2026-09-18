@@ -17,24 +17,32 @@ const predatorControls = PREDATOR_SPECIES_PRESETS.map(
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
-  <h1>life-hard — prototype</h1>
-  <div id="controls">
-    <label class="control">Largeur<input id="p-width" type="number" min="16" max="256" step="1" /></label>
-    <label class="control">Hauteur<input id="p-height" type="number" min="16" max="256" step="1" /></label>
-    <label class="control">Seed<input id="p-seed" type="text" /></label>
-    <label class="control">Niveau d'eau<input id="p-water" type="number" min="0" max="0.9" step="0.05" /></label>
-    <label class="control">Relief (octaves)<input id="p-relief" type="number" min="1" max="8" step="1" /></label>
-    ${herbivoreControls}
-    ${predatorControls}
-    <div id="actions">
-      <button id="btn-restart">Nouvelle simulation</button>
-      <button id="btn-toggle">Pause</button>
-      <button id="btn-step">+1 tick</button>
-      <span class="speed-control">
-        <button id="btn-speed-down">−</button>
-        <span id="speed-label">x1</span>
-        <button id="btn-speed-up">+</button>
-      </span>
+  <div id="top-bar">
+    <div id="top-bar-header">
+      <h1>life-hard — prototype</h1>
+      <button id="btn-toggle-controls">Masquer les paramètres</button>
+    </div>
+    <div id="controls-panel">
+      <div id="controls">
+        <label class="control">Largeur<input id="p-width" type="number" min="16" max="256" step="1" /></label>
+        <label class="control">Hauteur<input id="p-height" type="number" min="16" max="256" step="1" /></label>
+        <label class="control">Seed<input id="p-seed" type="text" /></label>
+        <label class="control">Niveau d'eau<input id="p-water" type="number" min="0" max="0.9" step="0.05" /></label>
+        <label class="control">Relief (octaves)<input id="p-relief" type="number" min="1" max="8" step="1" /></label>
+        <label class="control">Productivité du sol<input id="p-soil" type="number" min="0.2" max="3" step="0.1" /></label>
+        ${herbivoreControls}
+        ${predatorControls}
+        <div id="actions">
+          <button id="btn-restart">Nouvelle simulation</button>
+          <button id="btn-toggle">Pause</button>
+          <button id="btn-step">+1 tick</button>
+          <span class="speed-control">
+            <button id="btn-speed-down">−</button>
+            <span id="speed-label">x1</span>
+            <button id="btn-speed-up">+</button>
+          </span>
+        </div>
+      </div>
     </div>
   </div>
   <div id="canvas-wrap"><canvas id="sim-canvas"></canvas></div>
@@ -57,6 +65,7 @@ function readParams(): SimulationParams {
     seed: text('p-seed'),
     waterLevel: num('p-water'),
     reliefOctaves: num('p-relief'),
+    soilProductivity: num('p-soil'),
     herbivoreSpecies: HERBIVORE_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: num(`p-herb-${p.id}`) })),
     predatorSpecies: PREDATOR_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: num(`p-pred-${p.id}`) })),
   };
@@ -68,6 +77,7 @@ function writeParams(params: SimulationParams): void {
   (document.getElementById('p-seed') as HTMLInputElement).value = params.seed;
   (document.getElementById('p-water') as HTMLInputElement).value = String(params.waterLevel);
   (document.getElementById('p-relief') as HTMLInputElement).value = String(params.reliefOctaves);
+  (document.getElementById('p-soil') as HTMLInputElement).value = String(params.soilProductivity);
   for (const s of params.herbivoreSpecies) {
     (document.getElementById(`p-herb-${s.id}`) as HTMLInputElement).value = String(s.initialCount);
   }
@@ -153,6 +163,12 @@ function renderFrame(): void {
 }
 
 document.getElementById('btn-restart')!.addEventListener('click', restart);
+
+document.getElementById('btn-toggle-controls')!.addEventListener('click', (e) => {
+  const panel = document.getElementById('controls-panel') as HTMLElement;
+  panel.hidden = !panel.hidden;
+  (e.target as HTMLButtonElement).textContent = panel.hidden ? 'Afficher les paramètres' : 'Masquer les paramètres';
+});
 
 document.getElementById('btn-chart-mode')!.addEventListener('click', (e) => {
   chartMode = chartMode === 'window' ? 'full' : 'window';

@@ -10,6 +10,8 @@ export interface WorldParams {
   waterLevel: number;
   /** Roughness of the terrain: higher = more varied relief. */
   reliefOctaves: number;
+  /** Global multiplier on every biome's max biomass, applied uniformly. */
+  soilProductivity: number;
 }
 
 export class World {
@@ -26,7 +28,7 @@ export class World {
   private readonly biomeList = Object.values(Biome);
 
   constructor(params: WorldParams) {
-    const { width, height, rng, waterLevel, reliefOctaves } = params;
+    const { width, height, rng, waterLevel, reliefOctaves, soilProductivity } = params;
     this.width = width;
     this.height = height;
 
@@ -52,9 +54,9 @@ export class World {
         this.elevation[i] = elevation;
         this.moisture[i] = moisture;
         this.biome[i] = this.biomeList.indexOf(biome);
-        this.biomassMax[i] = profile.biomassMax;
+        this.biomassMax[i] = profile.biomassMax * soilProductivity;
         this.regrowRate[i] = profile.regrowRate;
-        this.biomass[i] = profile.biomassMax * 0.5;
+        this.biomass[i] = this.biomassMax[i] * 0.5;
       }
     }
   }
