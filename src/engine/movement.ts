@@ -19,13 +19,20 @@ const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
  * genuinely richer patch, a locally grazed-out cell) still clears it easily — without that, any
  * persistent directional pull, however faint per step, eventually drags an entire population
  * across the map one cell at a time since nothing here weighs the move against its cost.
+ *
+ * `scoreAt` receives the cell's flat index alongside x/y (mainly so it doesn't have to recompute
+ * `world.index(x,y)` itself — every caller needs it eventually, and this loop already computes it
+ * once per cell to consult `world.isWaterMask`). This loop runs up to a few hundred times per
+ * individual per tick, so avoiding a redundant index computation and a `world.isWater` method call
+ * (replaced by a direct `isWaterMask` read) per cell matters here more than almost anywhere else
+ * in the engine.
  */
 export function chooseGreedyMove(
   world: World,
   x: number,
   y: number,
   visionRadius: number,
-  scoreAt: (x: number, y: number) => number,
+  scoreAt: (x: number, y: number, cellIndex: number) => number,
   rng: Rng,
   stayThreshold = 0,
 ): [number, number] {
@@ -37,8 +44,10 @@ export function chooseGreedyMove(
     for (let dx = -visionRadius; dx <= visionRadius; dx++) {
       const nx = x + dx;
       const ny = y + dy;
-      if (!world.inBounds(nx, ny) || world.isWater(nx, ny)) continue;
-      const score = scoreAt(nx, ny);
+      if (!world.inBounds(nx, ny)) continue;
+      const idx = world.index(nx, ny);
+      if (world.isWaterMask[idx]) continue;
+      const score = scoreAt(nx, ny, idx);
       if (score > bestScore) {
         bestScore = score;
         bestX = nx;
@@ -49,7 +58,8 @@ export function chooseGreedyMove(
 
   if (bestScore > 0) {
     if (stayThreshold > 0) {
-      const currentScore = world.isWater(x, y) ? 0 : scoreAt(x, y);
+      const currentIdx = world.index(x, y);
+      const currentScore = world.isWaterMask[currentIdx] ? 0 : scoreAt(x, y, currentIdx);
       if (bestScore <= currentScore * (1 + stayThreshold)) return [0, 0];
     }
     return [Math.sign(bestX - x), Math.sign(bestY - y)];

@@ -192,16 +192,15 @@ export class PredatorPopulation {
   /** Aging, movement toward under-hunted prey patches, hunting, and mating-cooldown tick-down. */
   moveAndHunt(world: World, herbivores: HerbivorePopulation, rng: Rng): void {
     const preyGrid = herbivores.rebuildGrid(world);
-    const preyDensityAt = (x: number, y: number) => preyGrid.cellCountAt(world.index(x, y));
     // All predators share the same greedy movement heuristic, so without this they'd all converge
     // on the single richest prey cell and permanently crowd each other out there (territoriality
     // avoids that): a predator prefers prey-rich cells that aren't already staked out by others,
     // spreading hunting pressure across multiple patches instead of hammering one hotspot.
     const predatorGrid = this.rebuildGrid(world);
-    const territorialScoreAt = (x: number, y: number) => {
-      const preyCount = preyDensityAt(x, y);
+    const territorialScoreAt = (_x: number, _y: number, idx: number) => {
+      const preyCount = preyGrid.cellCountAt(idx);
       if (preyCount === 0) return 0;
-      const rivals = predatorGrid.cellCountAt(world.index(x, y));
+      const rivals = predatorGrid.cellCountAt(idx);
       return preyCount / (1 + rivals);
     };
     const eaten = new Set<number>();
@@ -226,8 +225,8 @@ export class PredatorPopulation {
       // population can never out-reproduce its losses.
       const readyToMate = this.cooldown[i] === 0 && this.energy[i] >= traits.matingEnergyThreshold;
       const scoreAt = readyToMate
-        ? (x: number, y: number) => {
-            const count = predatorGrid.cellCountAt(world.index(x, y));
+        ? (x: number, y: number, idx: number) => {
+            const count = predatorGrid.cellCountAt(idx);
             return x === this.x[i] && y === this.y[i] ? count - 1 : count;
           }
         : territorialScoreAt;

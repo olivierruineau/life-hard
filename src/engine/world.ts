@@ -45,6 +45,10 @@ export class World {
   readonly baseBiomassMax: Float32Array;
   /** Soil health multiplier (0-1) eroded by overgrazing and slowly recovered when ungrazed. */
   readonly fertility: Float32Array;
+  /** 1 where the cell is DeepWater/ShallowWater, 0 otherwise — precomputed once so `isWater` and
+   * the movement hot loop (`chooseGreedyMove`, scanning up to a few hundred cells per individual
+   * per tick) are a single flat read instead of a biome-array lookup + string comparison. */
+  readonly isWaterMask: Uint8Array;
   private readonly consumedLastTick: Float32Array;
   private readonly seasonPeriod: number;
   private readonly seasonAmplitude: number;
@@ -69,6 +73,7 @@ export class World {
     this.regrowRate = new Float32Array(cellCount);
     this.baseBiomassMax = new Float32Array(cellCount);
     this.fertility = new Float32Array(cellCount).fill(1);
+    this.isWaterMask = new Uint8Array(cellCount);
     this.consumedLastTick = new Float32Array(cellCount);
 
     const elevationNoise = new ValueNoise2D(rng);
@@ -85,6 +90,7 @@ export class World {
         this.elevation[i] = elevation;
         this.moisture[i] = moisture;
         this.biome[i] = this.biomeList.indexOf(biome);
+        this.isWaterMask[i] = biome === Biome.DeepWater || biome === Biome.ShallowWater ? 1 : 0;
         this.baseBiomassMax[i] = profile.biomassMax * soilProductivity;
         this.regrowRate[i] = profile.regrowRate;
         this.biomassMax[i] = this.baseBiomassMax[i] * this.seasonalFactorAt(y, 0);
@@ -125,8 +131,7 @@ export class World {
   }
 
   isWater(x: number, y: number): boolean {
-    const b = this.biomeAt(x, y);
-    return b === Biome.DeepWater || b === Biome.ShallowWater;
+    return this.isWaterMask[this.index(x, y)] === 1;
   }
 
   /** Updates fertility from last tick's grazing pressure, applies season, and regrows vegetation. */

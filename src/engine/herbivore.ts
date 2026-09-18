@@ -100,6 +100,7 @@ export class HerbivorePopulation {
   private maxLitterScratch: Float64Array = new Float64Array(0);
 
   private grid: SpatialGrid | undefined;
+  private affinityMultiplier: Float64Array | undefined;
   private readonly params: HerbivoreParams;
 
   constructor(params: HerbivoreParams) {
@@ -108,6 +109,28 @@ export class HerbivorePopulation {
 
   traits(i: number): Phenotype {
     return derivePhenotype(this.geneSpeed[i], this.geneVision[i], this.geneFertility[i], this.geneEfficiency[i], this.params.phenotypeRanges);
+  }
+
+  /**
+   * Per-cell foraging-preference multiplier (1 everywhere if no `biomeAffinity` is configured),
+   * built once and cached — biome layout is fixed for a simulation run, so there's no reason to
+   * re-derive `affinity[world.biomeAt(x,y)]` (a string-keyed object lookup) on every cell scanned
+   * by every individual on every tick.
+   */
+  private getAffinityMultiplier(world: World): Float64Array {
+    if (this.affinityMultiplier) return this.affinityMultiplier;
+    const mult = new Float64Array(world.width * world.height).fill(1);
+    const affinity = this.params.biomeAffinity;
+    if (affinity) {
+      for (let y = 0; y < world.height; y++) {
+        for (let x = 0; x < world.width; x++) {
+          const idx = world.index(x, y);
+          mult[idx] = affinity[world.biomeAt(x, y)] ?? 1;
+        }
+      }
+    }
+    this.affinityMultiplier = mult;
+    return mult;
   }
 
   color(i: number, hueOffset: number, hueSpan: number): string {
@@ -168,10 +191,8 @@ export class HerbivorePopulation {
 
   /** Aging, movement toward food (weighted by biome preference), grazing, and mating-cooldown tick-down. */
   moveAndFeed(world: World, rng: Rng): void {
-    const affinity = this.params.biomeAffinity;
-    const scoreAt = affinity
-      ? (x: number, y: number) => world.biomass[world.index(x, y)] * (affinity[world.biomeAt(x, y)] ?? 1)
-      : (x: number, y: number) => world.biomass[world.index(x, y)];
+    const affinityMultiplier = this.getAffinityMultiplier(world);
+    const scoreAt = (_x: number, _y: number, idx: number) => world.biomass[idx] * affinityMultiplier[idx];
 
     for (let i = 0; i < this.length; i++) {
       this.age[i]++;
