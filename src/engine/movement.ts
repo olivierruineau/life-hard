@@ -10,6 +10,15 @@ const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
  * Picks a one-step move: toward the richest land cell within vision (as
  * measured by `scoreAt`), falling back to a random land step, and only
  * entering water when no land option exists.
+ *
+ * `stayThreshold` (fraction, default 0) is how much better the best visible cell must be than the
+ * current one before it's worth moving for. At 0 (predators, and herbivores with no threshold
+ * passed) any positive improvement is chased, which is right for tracking real local depletion.
+ * A nonzero threshold makes shallow, sustained gradients (like a mild seasonal biomassMax swing
+ * spread over many rows) too marginal to act on tick after tick, while a real difference (a
+ * genuinely richer patch, a locally grazed-out cell) still clears it easily — without that, any
+ * persistent directional pull, however faint per step, eventually drags an entire population
+ * across the map one cell at a time since nothing here weighs the move against its cost.
  */
 export function chooseGreedyMove(
   world: World,
@@ -18,6 +27,7 @@ export function chooseGreedyMove(
   visionRadius: number,
   scoreAt: (x: number, y: number) => number,
   rng: Rng,
+  stayThreshold = 0,
 ): [number, number] {
   let bestScore = -1;
   let bestX = x;
@@ -37,6 +47,19 @@ export function chooseGreedyMove(
     }
   }
 
+  if (bestScore > 0) {
+    if (stayThreshold > 0) {
+      const currentScore = world.isWater(x, y) ? 0 : scoreAt(x, y);
+      if (bestScore <= currentScore * (1 + stayThreshold)) return [0, 0];
+    }
+    return [Math.sign(bestX - x), Math.sign(bestY - y)];
+  }
+
+  return randomLandStep(world, x, y, rng);
+}
+
+/** A random one-step move onto land when possible, only entering water if no land neighbor exists. */
+export function randomLandStep(world: World, x: number, y: number, rng: Rng): [number, number] {
   const landCandidates: Array<[number, number]> = [];
   const waterCandidates: Array<[number, number]> = [];
   for (const [dx, dy] of NEIGHBOR_OFFSETS) {
@@ -45,11 +68,6 @@ export function chooseGreedyMove(
     if (!world.inBounds(nx, ny)) continue;
     (world.isWater(nx, ny) ? waterCandidates : landCandidates).push([dx, dy]);
   }
-
-  if (bestScore > 0) {
-    return [Math.sign(bestX - x), Math.sign(bestY - y)];
-  }
-
   if (landCandidates.length > 0) {
     return landCandidates[Math.floor(rng() * landCandidates.length)];
   }

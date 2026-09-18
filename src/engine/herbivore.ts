@@ -63,6 +63,12 @@ export const DEFAULT_PHENOTYPE_RANGES: PhenotypeRanges = {
   maxLitterSize: [1, 4],
 };
 
+// How much better the best visible cell must be than the current one (as a fraction) before an
+// individual bothers moving — see chooseGreedyMove's stayThreshold. Tuned so a mild, map-wide
+// gradient (a seasonal biomassMax swing) isn't worth chasing tick after tick, while a real local
+// difference (an actually richer patch, a grazed-out cell) still clears it comfortably.
+const FORAGING_STAY_THRESHOLD = 0.05;
+
 export const DEFAULT_HERBIVORE_PARAMS: HerbivoreParams = {
   initialEnergy: 50,
   eatRate: 5,
@@ -132,7 +138,7 @@ export class HerbivorePopulation {
       const senescence = Math.max(0, h.age - this.params.matureAge) * this.params.senescenceRate;
       h.energy -= traits.restMetabolism + senescence;
 
-      const [dx, dy] = chooseGreedyMove(world, h.x, h.y, traits.visionRadius, scoreAt, rng);
+      const [dx, dy] = chooseGreedyMove(world, h.x, h.y, traits.visionRadius, scoreAt, rng, FORAGING_STAY_THRESHOLD);
       if (dx !== 0 || dy !== 0) {
         h.x += dx;
         h.y += dy;

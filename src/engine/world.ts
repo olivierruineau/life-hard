@@ -95,15 +95,21 @@ export class World {
 
   /** Seasonal biomassMax multiplier: hemispheres (split at the map's vertical center) swing in
    * opposite phase, strongest at the top/bottom edges and ~flat at the equator row, mirroring how
-   * real seasonality is muted near the equator and pronounced toward the poles. */
+   * real seasonality is muted near the equator and pronounced toward the poles. Squaring the
+   * latitude falloff (instead of linear) keeps most of the map mild and confines the strong swing
+   * to a band near the edges — a full-strength gradient across the whole height was dragging
+   * entire populations to whichever edge currently peaked, instead of a partial, gradual pull.
+   * The floor is also raised well above bare survival so the losing hemisphere stays viable
+   * enough that migrating away is a preference, not the only way to avoid starving. */
   private seasonalFactorAt(y: number, tick: number): number {
     if (this.seasonAmplitude <= 0 || this.seasonPeriod <= 0) return 1;
     const half = this.height / 2;
-    const distFromEquator = half > 0 ? Math.abs(y - this.equatorY) / half : 0;
+    const linearDist = half > 0 ? Math.abs(y - this.equatorY) / half : 0;
+    const distFromEquator = linearDist * linearDist;
     const hemisphereSign = y < this.equatorY ? -1 : 1;
     const phase = (2 * Math.PI * (tick % this.seasonPeriod)) / this.seasonPeriod;
     const factor = 1 + this.seasonAmplitude * distFromEquator * hemisphereSign * Math.sin(phase);
-    return Math.max(0.05, factor);
+    return Math.max(0.4, factor);
   }
 
   index(x: number, y: number): number {

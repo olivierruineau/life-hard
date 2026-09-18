@@ -193,7 +193,7 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   reliefOctaves: 5,
   soilProductivity: 1,
   seasonPeriod: 1200,
-  seasonAmplitude: 0.4,
+  seasonAmplitude: 0.15,
   herbivoreSpecies: HERBIVORE_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
   predatorSpecies: PREDATOR_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
 };
