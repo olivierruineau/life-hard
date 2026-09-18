@@ -139,7 +139,7 @@ export const HERBIVORE_SPECIES_PRESETS: HerbivoreSpeciesPreset[] = [
   {
     id: 'forest-browser',
     label: 'Herbivores (forêt)',
-    hueOffset: 180,
+    hueOffset: 90,
     defaultInitialCount: 130,
     params: FOREST_BROWSER_PARAMS,
   },
@@ -149,7 +149,7 @@ export const PREDATOR_SPECIES_PRESETS: PredatorSpeciesPreset[] = [
   {
     id: 'plains-courser',
     label: 'Prédateurs (plaine)',
-    hueOffset: 0,
+    hueOffset: 180,
     defaultInitialCount: 15,
     params: { ...DEFAULT_PREDATOR_PARAMS, phenotypeRanges: DEFAULT_PREDATOR_PHENOTYPE_RANGES },
     preyId: 'plains-grazer',
@@ -157,7 +157,7 @@ export const PREDATOR_SPECIES_PRESETS: PredatorSpeciesPreset[] = [
   {
     id: 'forest-stalker',
     label: 'Prédateurs (forêt)',
-    hueOffset: 180,
+    hueOffset: 270,
     // Disabled by default: forest-browser is a slow K-selected breeder (high mating threshold,
     // low eatRate) that can't out-reproduce any predation pressure strong enough for a predator to
     // feed itself — every catch-rate tuning tried (matching, then well below, the validated

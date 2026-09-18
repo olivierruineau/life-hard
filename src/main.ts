@@ -126,7 +126,10 @@ function renderFrame(): void {
   (document.getElementById('stat-tick') as HTMLElement).textContent = String(sim.tick);
   const statSpecies = document.getElementById('stat-species') as HTMLElement;
   statSpecies.innerHTML = [...sim.herbivoreSpecies, ...sim.predatorSpecies]
-    .map((s) => `<span>${s.label}: <strong>${s.population.individuals.length}</strong></span>`)
+    .map(
+      (s) =>
+        `<span style="color: hsl(${s.hueOffset}, 70%, 55%)">${s.label}: <strong>${s.population.individuals.length}</strong></span>`,
+    )
     .join('');
   drawChart();
 }
