@@ -108,6 +108,16 @@ button:hover {
   font-variant-numeric: tabular-nums;
 }
 
+#chart-controls {
+  display: flex;
+  justify-content: flex-end;
+}
+
+#chart-controls button {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
 #population-chart {
   display: block;
   width: 100%;

@@ -42,6 +42,9 @@ app.innerHTML = `
     <span>Tick: <strong id="stat-tick">0</strong></span>
     <span id="stat-species"></span>
   </div>
+  <div id="chart-controls">
+    <button id="btn-chart-mode">Depuis le début</button>
+  </div>
   <canvas id="population-chart"></canvas>
 `;
 
@@ -82,6 +85,17 @@ const chartCanvas = document.getElementById('population-chart') as HTMLCanvasEle
 const chartCtx = chartCanvas.getContext('2d')!;
 const speciesHistory = new Map<string, number[]>();
 const speciesHue = new Map<string, number>();
+const CHART_WINDOW = 500;
+const CHART_MAX_POINTS = 1000;
+let chartMode: 'window' | 'full' = 'window';
+
+function downsample(values: number[], maxPoints: number): number[] {
+  if (values.length <= maxPoints) return values;
+  const step = values.length / maxPoints;
+  const result: number[] = [];
+  for (let i = 0; i < maxPoints; i++) result.push(values[Math.floor(i * step)]);
+  return result;
+}
 
 function drawSeries(values: number[], max: number, color: string): void {
   if (values.length < 2) return;
@@ -104,8 +118,12 @@ function drawChart(): void {
   chartCanvas.height = rect.height;
 
   chartCtx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
-  const max = Math.max(1, ...[...speciesHistory.values()].map((values) => Math.max(0, ...values)));
-  for (const [id, values] of speciesHistory) {
+  const displayed = [...speciesHistory.entries()].map(([id, values]) => {
+    const windowed = chartMode === 'window' ? values.slice(-CHART_WINDOW) : values;
+    return [id, downsample(windowed, CHART_MAX_POINTS)] as const;
+  });
+  const max = Math.max(1, ...displayed.map(([, values]) => Math.max(0, ...values)));
+  for (const [id, values] of displayed) {
     drawSeries(values, max, `hsl(${speciesHue.get(id) ?? 0}, 70%, 55%)`);
   }
 }
@@ -136,6 +154,12 @@ function renderFrame(): void {
 
 document.getElementById('btn-restart')!.addEventListener('click', restart);
 
+document.getElementById('btn-chart-mode')!.addEventListener('click', (e) => {
+  chartMode = chartMode === 'window' ? 'full' : 'window';
+  (e.target as HTMLButtonElement).textContent = chartMode === 'window' ? 'Depuis le début' : 'Fenêtre glissante';
+  drawChart();
+});
+
 document.getElementById('btn-toggle')!.addEventListener('click', (e) => {
   running = !running;
   (e.target as HTMLButtonElement).textContent = running ? 'Pause' : 'Reprendre';
@@ -146,7 +170,6 @@ function recordHistory(): void {
     speciesHue.set(s.id, s.hueOffset);
     const history = speciesHistory.get(s.id) ?? [];
     history.push(s.population.individuals.length);
-    if (history.length > 500) history.shift();
     speciesHistory.set(s.id, history);
   }
 }
