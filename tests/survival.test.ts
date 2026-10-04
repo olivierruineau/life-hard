@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { HERBIVORE_SPECIES_PRESETS, PREDATOR_SPECIES_PRESETS } from '../src/engine/simulation.ts';
 import { fractionZero, makeParams, run } from './helpers.ts';
 
