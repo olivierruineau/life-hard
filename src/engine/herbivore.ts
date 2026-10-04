@@ -76,7 +76,7 @@ export const DEFAULT_HERBIVORE_PARAMS: HerbivoreParams = {
   senescenceRate: 0.02,
   maxAge: 550,
 
-  // Same rationale as PredatorPopulation's immigration (see predator.ts): a small closed
+  // A small closed
   // population sharing its food supply with a competing species can still get unlucky into
   // extinction no matter how the hunting/competition economics are tuned — a low-rate trickle of
   // outside arrivals is what turns a bad patch into a recoverable dip instead of a dead species.

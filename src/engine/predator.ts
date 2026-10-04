@@ -37,18 +37,22 @@ export interface PredatorParams extends ReproductionParams {
   senescenceRate: number;
   maxAge: number;
 
-  /** Population at/below which stray individuals may wander in from outside the mapped area. */
-  immigrationThreshold: number;
-  /** Per-tick probability of a wandering-in arrival while the population is at/below that threshold. */
-  immigrationChancePerTick: number;
+  /** Per-tick probability that one individual walks in from the map's edge (constant flux, independent of population size). */
+  edgeMigrationPerTick: number;
+  /** Energy a migrant arrives with, as a fraction of `initialEnergy` (travel leaves them worn). */
+  migrantEnergyFraction: number;
 }
 
+// Costs are deliberately low: a predator pack's equilibrium size is (prey harvest) / (per-capita
+// upkeep), and at the old upkeep it settled around 10-20 individuals — too few to ride out the
+// predator/prey cycle's trough in a closed map, so the species only survived through a rescue
+// mechanism. Cheaper upkeep raises the equilibrium pack size enough to persist on its own.
 export const DEFAULT_PREDATOR_PHENOTYPE_RANGES: PhenotypeRanges = {
   visionRadius: [3, 8],
-  moveCost: [0.35, 0.15],
-  swimCost: [3, 1.5],
-  baseRestMetabolism: 0.5,
-  restMetabolismGeneFactor: 0.08,
+  moveCost: [0.12, 0.05],
+  swimCost: [1, 0.5],
+  baseRestMetabolism: 0.18,
+  restMetabolismGeneFactor: 0.028,
   conversionEfficiency: [0.55, 0.85],
   matingEnergyThreshold: [70, 100],
   maxLitterSize: [1, 3],
@@ -65,16 +69,13 @@ export const DEFAULT_PREDATOR_PARAMS: PredatorParams = {
   maxMatingDistance: 0.4,
   phenotypeRanges: DEFAULT_PREDATOR_PHENOTYPE_RANGES,
 
-  // Predator population growth is bottlenecked by spatial mate-finding, not food — it plateaus
-  // around 10-40 individuals even with thousands of available prey, so a stronger per-capita catch
-  // rate (bumped from 0.35/20 during multi-species balancing) is what keeps a static-sized predator
-  // pack's aggregate harvest actually tracking herbivore population growth instead of a handful of
-  // predators being permanently outpaced by an exponentially growing prey base.
-  catchBaseChance: 0.5,
+  // Gentle catch rate: at 0.5 the pack over-harvested, drove its prey down to a handful and starved
+  // with it, going extinct within ~1000 ticks.
+  catchBaseChance: 0.2,
   catchSpeedFactor: 0.25,
   huntRadius: 2,
   huntCooldown: 18,
-  scarcityReferencePopulation: 150,
+  scarcityReferencePopulation: 250,
   scarcityFloor: 0.05,
   predatorInterferenceStrength: 0.5,
 
@@ -82,8 +83,8 @@ export const DEFAULT_PREDATOR_PARAMS: PredatorParams = {
   senescenceRate: 0.02,
   maxAge: 700,
 
-  immigrationThreshold: 6,
-  immigrationChancePerTick: 0.03,
+  edgeMigrationPerTick: 0.008,
+  migrantEnergyFraction: 0.6,
 };
 
 function clamp(v: number, min: number, max: number): number {
@@ -107,6 +108,8 @@ function countNearby(grid: SpatialGrid, world: World, cx: number, cy: number, r:
  * columns instead of an array of objects). Predators additionally track `huntCooldown`. */
 export class PredatorPopulation {
   length = 0;
+  /** Cumulative count of individuals that arrived via `migrateFromEdge` (diagnostic). */
+  migrantCount = 0;
   private capacity = 0;
   x: Int32Array = new Int32Array(0);
   y: Int32Array = new Int32Array(0);
@@ -360,28 +363,34 @@ export class PredatorPopulation {
       }
     }
 
-    this.immigrate(world, rng);
+    this.migrateFromEdge(world, rng);
   }
 
   /**
-   * A resident population this small on a single mapped patch is, in reality, part of a wider
-   * metapopulation: individuals occasionally wander in from neighboring, unmapped territory. This
-   * is what keeps a run of bad luck (a lean season, a failed litter) from being a permanent,
-   * irreversible extinction — without it, a closed population this size is a dead species walking
-   * no matter how the hunting/reproduction economics are tuned, since it will eventually hit zero
-   * by pure chance.
+   * A closed pack of a few dozen on one mapped patch is part of a wider metapopulation: individuals
+   * keep trickling in from neighboring territory, always across the map's border and at a rate that
+   * doesn't depend on how many are already here (a steady external source, not a rescue triggered
+   * by near-extinction). Migrants share the resident gene pool when there is one, arrive worn from
+   * the trip, and have to find food and mates like everyone else.
    */
-  private immigrate(world: World, rng: Rng): void {
-    if (this.length > this.params.immigrationThreshold) return;
-    if (rng() >= this.params.immigrationChancePerTick) return;
+  private migrateFromEdge(world: World, rng: Rng): void {
+    if (rng() >= this.params.edgeMigrationPerTick) return;
 
-    let attempts = 0;
-    while (attempts < 50) {
-      attempts++;
-      const x = Math.floor(rng() * world.width);
-      const y = Math.floor(rng() * world.height);
+    for (let attempts = 0; attempts < 50; attempts++) {
+      const along = rng();
+      const side = Math.floor(rng() * 4);
+      const x = side === 0 ? 0 : side === 1 ? world.width - 1 : Math.floor(along * world.width);
+      const y = side === 2 ? 0 : side === 3 ? world.height - 1 : Math.floor(along * world.height);
       if (world.isWater(x, y)) continue;
-      this.append(x, y, this.params.initialEnergy, seedGenes(rng));
+      const energy = this.params.initialEnergy * this.params.migrantEnergyFraction;
+      if (this.length === 0) {
+        this.append(x, y, energy, seedGenes(rng));
+      } else {
+        const kin = Math.floor(rng() * this.length);
+        const genes = mutateGenes(this.geneSpeed[kin], this.geneVision[kin], this.geneFertility[kin], this.geneEfficiency[kin], rng);
+        this.append(x, y, energy, genes);
+      }
+      this.migrantCount++;
       return;
     }
   }
