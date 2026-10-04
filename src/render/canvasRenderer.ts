@@ -1,5 +1,6 @@
 import { Biome } from '../engine/biome.ts';
 import type { Simulation } from '../engine/simulation.ts';
+import type { Overlay } from '../ui/inspector.ts';
 
 const BIOME_COLORS: Record<Biome, string> = {
   [Biome.DeepWater]: '#1b4f72',
@@ -35,7 +36,15 @@ export class CanvasRenderer {
     this.canvas.height = height * this.cellSize;
   }
 
-  render(sim: Simulation): void {
+  /** Map cell under a viewport point (client coordinates), or null when outside the map. */
+  cellAt(clientX: number, clientY: number, width: number, height: number): { x: number; y: number } | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = Math.floor(((clientX - rect.left) / rect.width) * width);
+    const y = Math.floor(((clientY - rect.top) / rect.height) * height);
+    return x >= 0 && x < width && y >= 0 && y < height ? { x, y } : null;
+  }
+
+  render(sim: Simulation, overlay: Overlay | null = null): void {
     const { world } = sim;
     if (this.canvas.width !== world.width * this.cellSize) {
       this.resize(world.width, world.height);
@@ -88,5 +97,22 @@ export class CanvasRenderer {
         this.ctx.stroke();
       }
     }
+
+    if (overlay) this.drawOverlay(overlay);
+  }
+
+  private drawOverlay(o: Overlay): void {
+    const cs = this.cellSize;
+    const ctx = this.ctx;
+    ctx.lineWidth = Math.max(1, cs * 0.15);
+    if (o.visionRadius > 0) {
+      const r = o.visionRadius;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.setLineDash([cs * 0.4, cs * 0.3]);
+      ctx.strokeRect((o.x - r) * cs, (o.y - r) * cs, (2 * r + 1) * cs, (2 * r + 1) * cs);
+      ctx.setLineDash([]);
+    }
+    ctx.strokeStyle = o.dead ? 'rgba(255, 90, 90, 0.9)' : '#ffffff';
+    ctx.strokeRect(o.x * cs - cs * 0.25, o.y * cs - cs * 0.25, cs * 1.5, cs * 1.5);
   }
 }

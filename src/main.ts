@@ -7,6 +7,7 @@ import {
   type SimulationParams,
 } from './engine/simulation.ts';
 import { CanvasRenderer } from './render/canvasRenderer.ts';
+import { inspect, pickAt, type Selection } from './ui/inspector.ts';
 
 const herbivoreControls = HERBIVORE_SPECIES_PRESETS.map(
   (p) => `<label class="control">${p.label}<input id="p-herb-${p.id}" type="number" min="0" max="2000" step="10" /></label>`,
@@ -48,6 +49,13 @@ app.innerHTML = `
     </div>
   </div>
   <div id="canvas-wrap"><canvas id="sim-canvas"></canvas></div>
+  <div id="inspector" hidden>
+    <div id="inspector-header">
+      <strong>Inspecteur</strong>
+      <button id="btn-inspector-close">Fermer</button>
+    </div>
+    <div id="inspector-body"></div>
+  </div>
   <div id="stats">
     <span>Tick: <strong id="stat-tick">0</strong></span>
     <span id="stat-season"></span>
@@ -148,8 +156,11 @@ function drawChart(): void {
 let sim = new Simulation(readParams());
 let running = true;
 
+let selection: Selection | null = null;
+
 function restart(): void {
   sim = new Simulation(readParams());
+  selection = null;
   speciesHistory.clear();
   speciesHue.clear();
   tickAccumulator = 0;
@@ -170,7 +181,15 @@ function seasonLabel(tick: number, period: number): string {
 }
 
 function renderFrame(): void {
-  renderer.render(sim);
+  const inspector = document.getElementById('inspector') as HTMLElement;
+  inspector.hidden = selection === null;
+  let overlay = null;
+  if (selection) {
+    const result = inspect(sim, selection);
+    overlay = result.overlay;
+    (document.getElementById('inspector-body') as HTMLElement).innerHTML = result.html;
+  }
+  renderer.render(sim, overlay);
   (document.getElementById('stat-tick') as HTMLElement).textContent = String(sim.tick);
   (document.getElementById('stat-season') as HTMLElement).textContent = seasonLabel(sim.tick, sim.params.seasonPeriod);
   const statSpecies = document.getElementById('stat-species') as HTMLElement;
@@ -182,6 +201,17 @@ function renderFrame(): void {
     .join('');
   drawChart();
 }
+
+canvas.addEventListener('click', (e) => {
+  const cell = renderer.cellAt(e.clientX, e.clientY, sim.world.width, sim.world.height);
+  selection = cell ? pickAt(sim, cell.x, cell.y) : null;
+  renderFrame();
+});
+
+document.getElementById('btn-inspector-close')!.addEventListener('click', () => {
+  selection = null;
+  renderFrame();
+});
 
 document.getElementById('btn-restart')!.addEventListener('click', restart);
 

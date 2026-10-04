@@ -113,6 +113,10 @@ export const DEFAULT_HERBIVORE_PARAMS: HerbivoreParams = {
 export class HerbivorePopulation {
   length = 0;
   private capacity = 0;
+  private nextId = 0;
+  /** Stable per-individual id, strictly increasing with index (compaction keeps order and births
+   * are appended), so `indexOfId` can binary-search it. Lets the UI follow one individual. */
+  id: Int32Array = new Int32Array(0);
   x: Int32Array = new Int32Array(0);
   y: Int32Array = new Int32Array(0);
   energy: Float64Array = new Float64Array(0);
@@ -132,7 +136,7 @@ export class HerbivorePopulation {
   private grid: SpatialGrid | undefined;
   private affinityMultiplier: Float64Array | undefined;
   private digestion: Float64Array | undefined;
-  private readonly params: HerbivoreParams;
+  readonly params: HerbivoreParams;
 
   constructor(params: HerbivoreParams) {
     this.params = params;
@@ -182,6 +186,20 @@ export class HerbivorePopulation {
     return genomeToColor(this.geneSpeed[i], this.geneVision[i], this.geneFertility[i], this.geneEfficiency[i], hueOffset, hueSpan);
   }
 
+  /** Current index of the individual with this id, or -1 if it has died. */
+  indexOfId(id: number): number {
+    let lo = 0;
+    let hi = this.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const v = this.id[mid];
+      if (v === id) return mid;
+      if (v < id) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    return -1;
+  }
+
   private ensureCapacity(extra: number): void {
     if (this.length + extra <= this.capacity) return;
     const next = Math.max(this.length + extra, this.capacity * 2, 16);
@@ -191,6 +209,7 @@ export class HerbivorePopulation {
       bigger.set(arr);
       return bigger;
     };
+    this.id = grow(this.id) as Int32Array;
     this.x = grow(this.x) as Int32Array;
     this.y = grow(this.y) as Int32Array;
     this.energy = grow(this.energy) as Float64Array;
@@ -208,6 +227,7 @@ export class HerbivorePopulation {
   private append(x: number, y: number, energy: number, genes: readonly [number, number, number, number]): void {
     this.ensureCapacity(1);
     const i = this.length;
+    this.id[i] = this.nextId++;
     this.x[i] = x;
     this.y[i] = y;
     this.energy[i] = energy;
@@ -296,6 +316,7 @@ export class HerbivorePopulation {
     for (let r = 0; r < this.length; r++) {
       if (this.energy[r] <= 0 || this.age[r] >= this.params.maxAge) continue;
       if (w !== r) {
+        this.id[w] = this.id[r];
         this.x[w] = this.x[r];
         this.y[w] = this.y[r];
         this.energy[w] = this.energy[r];

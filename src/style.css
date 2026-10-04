@@ -138,3 +138,57 @@ button:hover {
   background: #1e2027;
   border-radius: 8px;
 }
+
+#sim-canvas {
+  cursor: crosshair;
+}
+
+#inspector {
+  background: #1e2027;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 13px;
+}
+
+#inspector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+#inspector-header button {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+#inspector-body {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+}
+
+#inspector table {
+  border-collapse: collapse;
+}
+
+#inspector th {
+  text-align: left;
+  font-weight: normal;
+  color: #9a9fae;
+  padding: 2px 16px 2px 0;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+#inspector td {
+  padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.inspector-dead {
+  width: 100%;
+  margin: 0;
+  color: #ff8a8a;
+}

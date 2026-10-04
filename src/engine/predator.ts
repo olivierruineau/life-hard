@@ -111,6 +111,10 @@ export class PredatorPopulation {
   /** Cumulative count of individuals that arrived via `migrateFromEdge` (diagnostic). */
   migrantCount = 0;
   private capacity = 0;
+  private nextId = 0;
+  /** Stable per-individual id, strictly increasing with index (compaction keeps order and births
+   * are appended), so `indexOfId` can binary-search it. Lets the UI follow one individual. */
+  id: Int32Array = new Int32Array(0);
   x: Int32Array = new Int32Array(0);
   y: Int32Array = new Int32Array(0);
   energy: Float64Array = new Float64Array(0);
@@ -130,7 +134,7 @@ export class PredatorPopulation {
   maxLitterSize: Float64Array = new Float64Array(0);
 
   private grid: SpatialGrid | undefined;
-  private readonly params: PredatorParams;
+  readonly params: PredatorParams;
 
   constructor(params: PredatorParams) {
     this.params = params;
@@ -151,6 +155,20 @@ export class PredatorPopulation {
     return this.grid;
   }
 
+  /** Current index of the individual with this id, or -1 if it has died. */
+  indexOfId(id: number): number {
+    let lo = 0;
+    let hi = this.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const v = this.id[mid];
+      if (v === id) return mid;
+      if (v < id) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    return -1;
+  }
+
   private ensureCapacity(extra: number): void {
     if (this.length + extra <= this.capacity) return;
     const next = Math.max(this.length + extra, this.capacity * 2, 16);
@@ -160,6 +178,7 @@ export class PredatorPopulation {
       bigger.set(arr);
       return bigger;
     };
+    this.id = grow(this.id) as Int32Array;
     this.x = grow(this.x) as Int32Array;
     this.y = grow(this.y) as Int32Array;
     this.energy = grow(this.energy) as Float64Array;
@@ -178,6 +197,7 @@ export class PredatorPopulation {
   private append(x: number, y: number, energy: number, genes: readonly [number, number, number, number]): void {
     this.ensureCapacity(1);
     const i = this.length;
+    this.id[i] = this.nextId++;
     this.x[i] = x;
     this.y[i] = y;
     this.energy[i] = energy;
@@ -339,6 +359,7 @@ export class PredatorPopulation {
     for (let r = 0; r < this.length; r++) {
       if (this.energy[r] <= 0 || this.age[r] >= this.params.maxAge) continue;
       if (w !== r) {
+        this.id[w] = this.id[r];
         this.x[w] = this.x[r];
         this.y[w] = this.y[r];
         this.energy[w] = this.energy[r];
