@@ -16,10 +16,11 @@ import type { World } from './world.ts';
 
 /**
  * Per-biome foraging preference multiplier, applied to a cell's raw biomass when a species scores
- * candidate cells to move toward. Biomes absent from the map default to 1 (no preference). This
- * only biases *where* a species chooses to forage, not how much it actually eats once there
- * (`world.consume` is unaffected) — without it every herbivore species chases the single richest
- * biome on the map regardless of niche, since raw biomass quantity is all `chooseGreedyMove` sees.
+ * candidate cells to move toward. Biomes absent from the map default to 1 (no preference). It
+ * also scales how well the species digests what it eats there (see `digestionSpecialization`);
+ * how much biomass it removes (`world.consume`) is unaffected. Without it every herbivore species
+ * chases the single richest biome on the map regardless of niche, since raw biomass quantity is
+ * all `chooseGreedyMove` sees.
  */
 export type BiomeAffinity = Partial<Record<Biome, number>>;
 
@@ -29,6 +30,17 @@ export interface HerbivoreParams extends ReproductionParams {
   phenotypeRanges: PhenotypeRanges;
   /** Foraging preference by biome; absent = uniform (today's behavior). */
   biomeAffinity?: BiomeAffinity;
+  /**
+   * 0-1: how much `biomeAffinity` also limits digestion, not just where the species goes. At 0 a
+   * species eats as well in any biome; at 1 its energy conversion in a biome is scaled by
+   * affinity / (its best affinity), so grazing outside its niche is a real handicap.
+   */
+  digestionSpecialization: number;
+  /**
+   * 0-1: an individual only breeds on a cell whose biomass is at least this fraction of the
+   * cell's current max. Stops a population from breeding itself down to a fully grazed-out map.
+   */
+  breedMinBiomassFraction: number;
 
   /** Age (in ticks) at which senescence starts adding extra metabolic cost. */
   matureAge: number;
@@ -71,6 +83,13 @@ export const DEFAULT_HERBIVORE_PARAMS: HerbivoreParams = {
   matingRadius: 1,
   maxMatingDistance: 0.4,
   phenotypeRanges: DEFAULT_PHENOTYPE_RANGES,
+  // Niche has to be real, not just a movement bias: with free digestion everywhere, selection on
+  // conversion efficiency eventually let the plains grazers spill into the forest, starve the
+  // browsers and overgraze the whole map (even with no predators at all).
+  digestionSpecialization: 1,
+  // Breeding stops on a cell once its food is mostly gone, so a population levels off while the map
+  // is still grazed at a sustainable level instead of breeding itself down to bare soil.
+  breedMinBiomassFraction: 0.6,
 
   matureAge: 250,
   senescenceRate: 0.02,
@@ -112,6 +131,7 @@ export class HerbivorePopulation {
 
   private grid: SpatialGrid | undefined;
   private affinityMultiplier: Float64Array | undefined;
+  private digestion: Float64Array | undefined;
   private readonly params: HerbivoreParams;
 
   constructor(params: HerbivoreParams) {
@@ -128,6 +148,20 @@ export class HerbivorePopulation {
    * re-derive `affinity[world.biomeAt(x,y)]` (a string-keyed object lookup) on every cell scanned
    * by every individual on every tick.
    */
+  private getDigestion(world: World): Float64Array {
+    if (this.digestion) return this.digestion;
+    const mult = this.getAffinityMultiplier(world);
+    const out = new Float64Array(mult.length).fill(1);
+    const strength = this.params.digestionSpecialization;
+    const affinity = this.params.biomeAffinity;
+    if (affinity && strength > 0) {
+      const best = Math.max(...Object.values(affinity));
+      for (let i = 0; i < out.length; i++) out[i] = 1 - strength * (1 - Math.min(1, mult[i] / best));
+    }
+    this.digestion = out;
+    return out;
+  }
+
   private getAffinityMultiplier(world: World): Float64Array {
     if (this.affinityMultiplier) return this.affinityMultiplier;
     const mult = new Float64Array(world.width * world.height).fill(1);
@@ -205,6 +239,7 @@ export class HerbivorePopulation {
   /** Aging, movement toward food (weighted by biome preference), grazing, and mating-cooldown tick-down. */
   moveAndFeed(world: World, rng: Rng): void {
     const affinityMultiplier = this.getAffinityMultiplier(world);
+    const digestion = this.getDigestion(world);
     const scoreAt = (_x: number, _y: number, idx: number) => world.biomass[idx] * affinityMultiplier[idx];
 
     for (let i = 0; i < this.length; i++) {
@@ -222,7 +257,7 @@ export class HerbivorePopulation {
 
       if (!world.isWater(this.x[i], this.y[i])) {
         const eaten = world.consume(this.x[i], this.y[i], this.params.eatRate);
-        this.energy[i] += eaten * traits.conversionEfficiency;
+        this.energy[i] += eaten * traits.conversionEfficiency * digestion[world.index(this.x[i], this.y[i])];
       }
 
       if (this.cooldown[i] > 0) this.cooldown[i]--;
@@ -239,13 +274,20 @@ export class HerbivorePopulation {
   /** Mating, death (starvation, predation, or old age), and spawning newborns. */
   reproduceAndCleanup(world: World, rng: Rng): void {
     const grid = this.rebuildGrid(world);
+    const minFraction = this.params.breedMinBiomassFraction;
 
     const events = performMating(
       this,
       grid,
       world,
       this.params,
-      (i) => this.matingThreshold[i],
+      (i) => {
+        if (minFraction > 0) {
+          const cell = world.index(this.x[i], this.y[i]);
+          if (world.biomass[cell] < minFraction * world.biomassMax[cell]) return Infinity;
+        }
+        return this.matingThreshold[i];
+      },
       (i) => this.maxLitterSize[i],
       rng,
     );

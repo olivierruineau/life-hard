@@ -1,4 +1,4 @@
-import { DEFAULT_SIMULATION_PARAMS, PREDATOR_SPECIES_PRESETS, Simulation } from '../src/engine/simulation.ts';
+import { DEFAULT_SIMULATION_PARAMS, HERBIVORE_SPECIES_PRESETS, PREDATOR_SPECIES_PRESETS, Simulation } from '../src/engine/simulation.ts';
 
 // Usage: tsx scripts/immigration-audit.ts [ticks=8000] [seedStart=0] [seedEnd=6] [immigration=on|off]
 // PRED_OVERRIDE='{"catchBaseChance":0.3,"plains-courser":{...}}' merges PredatorParams into every preset (or one, via its id key).
@@ -16,6 +16,11 @@ if (process.env.PRED_OVERRIDE) {
   }
 }
 
+if (process.env.HERB_OVERRIDE) {
+  // JSON merged into every herbivore preset's params; keys 'plains-grazer'/'forest-browser' target one species.
+  const { 'plains-grazer': grazer, 'forest-browser': browser, ...shared } = JSON.parse(process.env.HERB_OVERRIDE);
+  for (const p of HERBIVORE_SPECIES_PRESETS) Object.assign(p.params, shared, p.id === 'plains-grazer' ? grazer : browser);
+}
 if (process.env.COST_SCALE) {
   const f = Number(process.env.COST_SCALE);
   for (const p of PREDATOR_SPECIES_PRESETS) {
@@ -50,6 +55,6 @@ for (let k = seedStart; k < seedEnd; k++) {
   }
   sim.predatorSpecies.forEach((s, i) => {
     const st = stats[i];
-    console.log([seed, s.id, st.extinctAt, st.min, (st.sum / ticks).toFixed(1), s.population.migrantCount, herbMin, (st.zeroTicks / ticks).toFixed(3), herbMax].join(','));
+    console.log([seed, s.id, st.extinctAt, st.min, (st.sum / ticks).toFixed(1), s.population.migrantCount, herbMin, (st.zeroTicks / ticks).toFixed(3), herbMax, ...sim.herbivoreSpecies.map((h) => h.population.length)].join(','));
   });
 }
