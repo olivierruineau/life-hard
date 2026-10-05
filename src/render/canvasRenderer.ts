@@ -17,6 +17,10 @@ const BIOME_LIST = Object.values(Biome);
 /** Degrees of hue variation visible within one species' own color band. */
 const SPECIES_HUE_SPAN = 50;
 
+/** Carrion amount at which a cross is fully opaque (about one herbivore body); below, it fades out as the body rots. */
+const CARRION_FULL_OPACITY = 40;
+const CARRION_MIN_VISIBLE = 0.5;
+
 export class CanvasRenderer {
   private readonly ctx: CanvasRenderingContext2D;
   private cellSize = 1;
@@ -70,6 +74,9 @@ export class CanvasRenderer {
           this.ctx.fillStyle = `rgba(20, 90, 20, ${fraction * 0.45})`;
           this.ctx.fillRect(x * cs, y * cs, cs, cs);
         }
+
+        const carrion = world.carrion[i];
+        if (carrion >= CARRION_MIN_VISIBLE) this.drawCarrionCross(x, y, Math.min(1, carrion / CARRION_FULL_OPACITY));
       }
     }
 
@@ -119,6 +126,32 @@ export class CanvasRenderer {
     }
 
     if (overlay) this.drawOverlay(overlay);
+  }
+
+  private drawCarrionCross(x: number, y: number, opacity: number): void {
+    const cs = this.cellSize;
+    const ctx = this.ctx;
+    const margin = cs * 0.22;
+    const x0 = x * cs + margin;
+    const y0 = y * cs + margin;
+    const x1 = (x + 1) * cs - margin;
+    const y1 = (y + 1) * cs - margin;
+    const path = () => {
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.moveTo(x1, y0);
+      ctx.lineTo(x0, y1);
+      ctx.stroke();
+    };
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = `rgba(20, 15, 10, ${opacity * 0.7})`;
+    ctx.lineWidth = Math.max(2, cs * 0.28);
+    path();
+    ctx.strokeStyle = `rgba(245, 235, 215, ${opacity})`;
+    ctx.lineWidth = Math.max(1, cs * 0.14);
+    path();
+    ctx.lineCap = 'butt';
   }
 
   private drawOverlay(o: Overlay): void {
