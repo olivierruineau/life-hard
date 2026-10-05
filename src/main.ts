@@ -8,7 +8,8 @@ import {
   type SimulationParams,
 } from './engine/simulation.ts';
 import { CanvasRenderer } from './render/canvasRenderer.ts';
-import { drawPopulationChart } from './ui/chart.ts';
+import { drawLineChart } from './ui/chart.ts';
+import { GENE_COLORS, GENE_KEYS, GENE_LABELS, GeneHistory } from './ui/geneStats.ts';
 import { inspect, pickAt, type Selection } from './ui/inspector.ts';
 
 const herbivoreControls = HERBIVORE_SPECIES_PRESETS.map(
@@ -75,6 +76,12 @@ app.innerHTML = `
     <button id="btn-chart-mode">Depuis le début</button>
   </div>
   <canvas id="population-chart"></canvas>
+  <div id="gene-controls">
+    <label>Gènes de <select id="gene-species"></select></label>
+    <div id="gene-legend"></div>
+    <span id="gene-hint">ligne = moyenne, zone = ± écart-type</span>
+  </div>
+  <canvas id="gene-chart"></canvas>
 `;
 
 function readParams(): SimulationParams {
@@ -134,7 +141,32 @@ function drawChart(): void {
     values,
     color: `hsl(${speciesHue.get(id) ?? 0}, 70%, 55%)`,
   }));
-  drawPopulationChart(chartCanvas, series, chartMode === 'window' ? CHART_WINDOW : null);
+  drawLineChart(chartCanvas, series, chartMode === 'window' ? CHART_WINDOW : null);
+}
+
+const GENE_SAMPLE_EVERY = 5;
+const geneHistory = new GeneHistory(GENE_SAMPLE_EVERY);
+const geneChartCanvas = document.getElementById('gene-chart') as HTMLCanvasElement;
+const geneSelect = document.getElementById('gene-species') as HTMLSelectElement;
+geneSelect.addEventListener('change', () => drawGeneChart());
+
+function drawGeneChart(): void {
+  const entry = geneHistory.get(geneSelect.value);
+  const series = entry
+    ? GENE_KEYS.map((key) => ({ id: key, values: entry[key].mean, band: entry[key].sd, color: GENE_COLORS[key] }))
+    : [];
+  drawLineChart(geneChartCanvas, series, chartMode === 'window' ? CHART_WINDOW : null, {
+    autoRange: true,
+    yDecimals: 2,
+    ticksPerPoint: GENE_SAMPLE_EVERY,
+  });
+  const last = (values: number[] | undefined) => (values && values.length > 0 ? values[values.length - 1] : NaN);
+  (document.getElementById('gene-legend') as HTMLElement).innerHTML = GENE_KEYS.map((key) => {
+    const mean = last(entry?.[key].mean);
+    const sd = last(entry?.[key].sd);
+    const value = Number.isFinite(mean) ? ` ${mean.toFixed(2)} ±${sd.toFixed(2)}` : '';
+    return `<span class="legend-item"><i style="background: ${GENE_COLORS[key]}"></i>${GENE_LABELS[key]}${value}</span>`;
+  }).join('');
 }
 
 let sim = new Simulation(readParams());
@@ -144,6 +176,10 @@ function renderLegend(): void {
   legend.innerHTML = [...sim.herbivoreSpecies, ...sim.predatorSpecies, ...sim.scavengerSpecies]
     .map((s) => `<span class="legend-item"><i style="background: hsl(${s.hueOffset}, 70%, 55%)"></i>${s.label}</span>`)
     .join('');
+  const previous = geneSelect.value;
+  const species = [...sim.herbivoreSpecies, ...sim.predatorSpecies, ...sim.scavengerSpecies];
+  geneSelect.innerHTML = species.map((s) => `<option value="${s.id}">${s.label}</option>`).join('');
+  if (species.some((s) => s.id === previous)) geneSelect.value = previous;
 }
 renderLegend();
 let running = true;
@@ -156,6 +192,7 @@ function restart(): void {
   renderLegend();
   speciesHistory.clear();
   speciesHue.clear();
+  geneHistory.clear();
   tickAccumulator = 0;
   renderFrame();
 }
@@ -193,6 +230,7 @@ function renderFrame(): void {
     )
     .join('');
   drawChart();
+  drawGeneChart();
 }
 
 canvas.addEventListener('click', (e) => {
@@ -228,6 +266,7 @@ document.getElementById('btn-chart-mode')!.addEventListener('click', (e) => {
   chartMode = chartMode === 'window' ? 'full' : 'window';
   (e.target as HTMLButtonElement).textContent = chartMode === 'window' ? 'Depuis le début' : 'Fenêtre glissante';
   drawChart();
+  drawGeneChart();
 });
 
 document.getElementById('btn-toggle')!.addEventListener('click', (e) => {
@@ -241,6 +280,7 @@ function recordHistory(): void {
     const history = speciesHistory.get(s.id) ?? [];
     history.push(s.population.length);
     speciesHistory.set(s.id, history);
+    if (sim.tick % GENE_SAMPLE_EVERY === 0) geneHistory.record(s.id, s.population);
   }
 }
 

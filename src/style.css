@@ -128,7 +128,8 @@ button:hover {
   gap: 16px;
 }
 
-#chart-legend {
+#chart-legend,
+#gene-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 16px;
@@ -152,7 +153,20 @@ button:hover {
   padding: 4px 10px;
 }
 
-#population-chart {
+#gene-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+}
+
+#gene-hint {
+  margin-left: auto;
+  opacity: 0.6;
+}
+
+#population-chart,
+#gene-chart {
   display: block;
   width: 100%;
   height: 200px;
