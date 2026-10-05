@@ -11,4 +11,8 @@
 
 ## Pistes d'équilibrage
 
-- ~2 runs sur 16 dépassent encore 1500 herbivores (non diagnostiqué).
+- Les « 1500+ herbivores » de certains seeds ne sont pas une explosion : le troupeau
+  sature à ~0,5 herbivore par cellule de terre sur tous les seeds de l'audit
+  (audit-0 : 4623 cases de plaine sur 5636 de terre, ~2700 herbivores), avec
+  biomasse à ~57 % du max et fertilité > 0,9. Garde-fou : `tests/capacity.test.ts`.
+  Ne pas retoucher l'équilibre pour ça ; le seuil 1500 dépend juste de la taille de carte.
