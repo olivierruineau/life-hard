@@ -16,6 +16,8 @@ import type { World } from './world.ts';
 
 export interface PredatorParams extends ReproductionParams {
   initialEnergy: number;
+  /** Organic matter a dead body leaves on its cell (on top of any energy it still holds). */
+  carcassEnergy: number;
   phenotypeRanges: PhenotypeRanges;
 
   /** Base probability of a successful catch when both predator and prey have equal speed. */
@@ -60,6 +62,7 @@ export const DEFAULT_PREDATOR_PHENOTYPE_RANGES: PhenotypeRanges = {
 
 export const DEFAULT_PREDATOR_PARAMS: PredatorParams = {
   initialEnergy: 150,
+  carcassEnergy: 90,
   minLitterSize: 1,
   litterCostBase: 35,
   litterCostExponent: 1.5,
@@ -299,6 +302,7 @@ export class PredatorPopulation {
           );
           if (rng() < chance) {
             this.energy[i] += herbivores.energy[preyIdx] * traits.conversionEfficiency;
+            world.depositCarrion(herbivores.x[preyIdx], herbivores.y[preyIdx], herbivores.energy[preyIdx] * (1 - traits.conversionEfficiency));
             herbivores.energy[preyIdx] = -1;
             this.huntCooldown[i] = this.params.huntCooldown;
           }
@@ -357,7 +361,10 @@ export class PredatorPopulation {
 
     let w = 0;
     for (let r = 0; r < this.length; r++) {
-      if (this.energy[r] <= 0 || this.age[r] >= this.params.maxAge) continue;
+      if (this.energy[r] <= 0 || this.age[r] >= this.params.maxAge) {
+        world.depositCarrion(this.x[r], this.y[r], this.params.carcassEnergy + Math.max(0, this.energy[r]));
+        continue;
+      }
       if (w !== r) {
         this.id[w] = this.id[r];
         this.x[w] = this.x[r];

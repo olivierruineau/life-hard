@@ -105,6 +105,7 @@ function cellHtml(sim: Simulation, x: number, y: number): string {
     row('Humidité', num(world.moisture[c], 2)),
     row('Biomasse', `${num(world.biomass[c], 0)} / ${num(world.biomassMax[c], 0)}`),
     row('Fertilité du sol', pct(world.fertility[c])),
+    row('Matière organique', num(world.carrion[c], 0)),
     row('Individus', counts || 'aucun'),
   ].join('')}</table>`;
 }

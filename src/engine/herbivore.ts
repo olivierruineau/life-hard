@@ -26,6 +26,8 @@ export type BiomeAffinity = Partial<Record<Biome, number>>;
 
 export interface HerbivoreParams extends ReproductionParams {
   initialEnergy: number;
+  /** Organic matter a dead body leaves on its cell (on top of any energy it still holds). */
+  carcassEnergy: number;
   eatRate: number;
   phenotypeRanges: PhenotypeRanges;
   /** Foraging preference by biome; absent = uniform (today's behavior). */
@@ -74,6 +76,7 @@ const FORAGING_STAY_THRESHOLD = 0.05;
 
 export const DEFAULT_HERBIVORE_PARAMS: HerbivoreParams = {
   initialEnergy: 50,
+  carcassEnergy: 30,
   eatRate: 5,
   minLitterSize: 1,
   litterCostBase: 40,
@@ -314,7 +317,10 @@ export class HerbivorePopulation {
 
     let w = 0;
     for (let r = 0; r < this.length; r++) {
-      if (this.energy[r] <= 0 || this.age[r] >= this.params.maxAge) continue;
+      if (this.energy[r] <= 0 || this.age[r] >= this.params.maxAge) {
+        world.depositCarrion(this.x[r], this.y[r], this.params.carcassEnergy + Math.max(0, this.energy[r]));
+        continue;
+      }
       if (w !== r) {
         this.id[w] = this.id[r];
         this.x[w] = this.x[r];

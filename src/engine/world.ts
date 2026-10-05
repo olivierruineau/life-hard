@@ -31,6 +31,13 @@ const FERTILITY_EROSION_RATE = 0.015;
 const FERTILITY_RECOVERY_RATE = 0.004;
 const MIN_FERTILITY = 0.15;
 
+// Decomposition: every dead body leaves organic matter (`carrion`, in energy units) on its cell.
+// It rots at CARRION_DECAY_RATE per tick (half-life ~70 ticks) and what rots feeds the soil, so
+// the nutrients taken out by grazing come back where animals die. Fertility is capped at 1, so
+// this only matters on degraded soil — exactly where starvation deaths pile up.
+const CARRION_DECAY_RATE = 0.01;
+const FERTILITY_PER_DECOMPOSED_CARRION = 0.004;
+
 export class World {
   readonly width: number;
   readonly height: number;
@@ -49,6 +56,8 @@ export class World {
    * the movement hot loop (`chooseGreedyMove`, scanning up to a few hundred cells per individual
    * per tick) are a single flat read instead of a biome-array lookup + string comparison. */
   readonly isWaterMask: Uint8Array;
+  /** Organic matter (energy units) left by dead individuals, decomposing into soil fertility. */
+  readonly carrion: Float32Array;
   private readonly consumedLastTick: Float32Array;
   private readonly seasonPeriod: number;
   private readonly seasonAmplitude: number;
@@ -75,6 +84,7 @@ export class World {
     this.fertility = new Float32Array(cellCount).fill(1);
     this.isWaterMask = new Uint8Array(cellCount);
     this.consumedLastTick = new Float32Array(cellCount);
+    this.carrion = new Float32Array(cellCount);
 
     const elevationNoise = new ValueNoise2D(rng);
     const moistureNoise = new ValueNoise2D(rng);
@@ -157,12 +167,24 @@ export class World {
         }
         this.consumedLastTick[i] = 0;
 
+        const decomposed = this.carrion[i] * CARRION_DECAY_RATE;
+        if (decomposed > 0) {
+          this.carrion[i] -= decomposed;
+          this.fertility[i] = Math.min(1, this.fertility[i] + decomposed * FERTILITY_PER_DECOMPOSED_CARRION);
+        }
+
         const max = base * this.fertility[i] * seasonalFactor;
         this.biomassMax[i] = max;
         const deficit = max - this.biomass[i];
         this.biomass[i] += deficit * this.regrowRate[i];
       }
     }
+  }
+
+  /** Leaves organic matter on a land cell (bodies that sink in water are simply lost). */
+  depositCarrion(x: number, y: number, amount: number): void {
+    const i = this.index(x, y);
+    if (amount > 0 && this.isWaterMask[i] === 0) this.carrion[i] += amount;
   }
 
   consume(x: number, y: number, amount: number): number {

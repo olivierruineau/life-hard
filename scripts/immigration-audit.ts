@@ -53,8 +53,19 @@ for (let k = seedStart; k < seedEnd; k++) {
     for (const h of sim.herbivoreSpecies) herbMax = Math.max(herbMax, h.population.length);
     if (t >= 500) for (const h of sim.herbivoreSpecies) herbMin = Math.min(herbMin, h.population.length);
   }
+  let fertilitySum = 0;
+  let landCells = 0;
+  let carrionTotal = 0;
+  for (let c = 0; c < sim.world.biomass.length; c++) {
+    carrionTotal += sim.world.carrion[c];
+    if (sim.world.isWaterMask[c] === 0) {
+      fertilitySum += sim.world.fertility[c];
+      landCells++;
+    }
+  }
+  const meanFertility = fertilitySum / landCells;
   sim.predatorSpecies.forEach((s, i) => {
     const st = stats[i];
-    console.log([seed, s.id, st.extinctAt, st.min, (st.sum / ticks).toFixed(1), s.population.migrantCount, herbMin, (st.zeroTicks / ticks).toFixed(3), herbMax, ...sim.herbivoreSpecies.map((h) => h.population.length)].join(','));
+    console.log([seed, s.id, st.extinctAt, st.min, (st.sum / ticks).toFixed(1), s.population.migrantCount, herbMin, (st.zeroTicks / ticks).toFixed(3), herbMax, ...sim.herbivoreSpecies.map((h) => h.population.length), meanFertility.toFixed(3), carrionTotal.toFixed(0)].join(','));
   });
 }
