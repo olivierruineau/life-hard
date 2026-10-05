@@ -8,6 +8,7 @@ import {
   type SimulationParams,
 } from './engine/simulation.ts';
 import { CanvasRenderer } from './render/canvasRenderer.ts';
+import { drawPopulationChart } from './ui/chart.ts';
 import { inspect, pickAt, type Selection } from './ui/inspector.ts';
 
 const herbivoreControls = HERBIVORE_SPECIES_PRESETS.map(
@@ -67,6 +68,7 @@ app.innerHTML = `
     <span id="stat-species"></span>
   </div>
   <div id="chart-controls">
+    <div id="chart-legend"></div>
     <button id="btn-chart-mode">Depuis le début</button>
   </div>
   <canvas id="population-chart"></canvas>
@@ -116,53 +118,29 @@ const canvas = document.getElementById('sim-canvas') as HTMLCanvasElement;
 const renderer = new CanvasRenderer(canvas);
 
 const chartCanvas = document.getElementById('population-chart') as HTMLCanvasElement;
-const chartCtx = chartCanvas.getContext('2d')!;
 const speciesHistory = new Map<string, number[]>();
 const speciesHue = new Map<string, number>();
 const CHART_WINDOW = 500;
-const CHART_MAX_POINTS = 1000;
 let chartMode: 'window' | 'full' = 'window';
 
-function downsample(values: number[], maxPoints: number): number[] {
-  if (values.length <= maxPoints) return values;
-  const step = values.length / maxPoints;
-  const result: number[] = [];
-  for (let i = 0; i < maxPoints; i++) result.push(values[Math.floor(i * step)]);
-  return result;
-}
-
-function drawSeries(values: number[], max: number, color: string): void {
-  if (values.length < 2) return;
-  const step = chartCanvas.width / (values.length - 1);
-  chartCtx.strokeStyle = color;
-  chartCtx.lineWidth = 2;
-  chartCtx.beginPath();
-  values.forEach((count, i) => {
-    const x = i * step;
-    const y = chartCanvas.height - (count / max) * (chartCanvas.height - 8) - 4;
-    if (i === 0) chartCtx.moveTo(x, y);
-    else chartCtx.lineTo(x, y);
-  });
-  chartCtx.stroke();
-}
-
 function drawChart(): void {
-  const rect = chartCanvas.getBoundingClientRect();
-  chartCanvas.width = rect.width;
-  chartCanvas.height = rect.height;
-
-  chartCtx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
-  const displayed = [...speciesHistory.entries()].map(([id, values]) => {
-    const windowed = chartMode === 'window' ? values.slice(-CHART_WINDOW) : values;
-    return [id, downsample(windowed, CHART_MAX_POINTS)] as const;
-  });
-  const max = Math.max(1, ...displayed.map(([, values]) => Math.max(0, ...values)));
-  for (const [id, values] of displayed) {
-    drawSeries(values, max, `hsl(${speciesHue.get(id) ?? 0}, 70%, 55%)`);
-  }
+  const series = [...speciesHistory.entries()].map(([id, values]) => ({
+    id,
+    values,
+    color: `hsl(${speciesHue.get(id) ?? 0}, 70%, 55%)`,
+  }));
+  drawPopulationChart(chartCanvas, series, chartMode === 'window' ? CHART_WINDOW : null);
 }
 
 let sim = new Simulation(readParams());
+
+function renderLegend(): void {
+  const legend = document.getElementById('chart-legend') as HTMLElement;
+  legend.innerHTML = [...sim.herbivoreSpecies, ...sim.predatorSpecies, ...sim.scavengerSpecies]
+    .map((s) => `<span class="legend-item"><i style="background: hsl(${s.hueOffset}, 70%, 55%)"></i>${s.label}</span>`)
+    .join('');
+}
+renderLegend();
 let running = true;
 
 let selection: Selection | null = null;
@@ -170,6 +148,7 @@ let selection: Selection | null = null;
 function restart(): void {
   sim = new Simulation(readParams());
   selection = null;
+  renderLegend();
   speciesHistory.clear();
   speciesHue.clear();
   tickAccumulator = 0;

@@ -8,7 +8,6 @@
   d'individus n'a presque rien à capter, il faudra du rééquilibrage et sans
   doute de la migration.
 - Événements : sécheresse, incendie.
-- Graphique : légende et axes (l'inspecteur est fait, pas la légende).
 - Sauvegarde / chargement d'une simulation + export CSV des populations.
 
 ## Pistes d'équilibrage
