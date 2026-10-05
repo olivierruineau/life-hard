@@ -38,6 +38,7 @@ app.innerHTML = `
         <label class="control">Productivité du sol<input id="p-soil" type="number" min="0.2" max="3" step="0.1" /></label>
         <label class="control">Durée de saison (ticks)<input id="p-season-period" type="number" min="0" max="5000" step="100" /></label>
         <label class="control">Amplitude saisonnière<input id="p-season-amplitude" type="number" min="0" max="0.8" step="0.05" /></label>
+        <label class="control">Événements (pour 1000 ticks)<input id="p-event-rate" type="number" min="0" max="50" step="0.1" /></label>
         ${herbivoreControls}
         ${predatorControls}
         ${scavengerControls}
@@ -45,6 +46,8 @@ app.innerHTML = `
           <button id="btn-restart">Nouvelle simulation</button>
           <button id="btn-toggle">Pause</button>
           <button id="btn-step">+1 tick</button>
+          <button id="btn-drought">Sécheresse</button>
+          <button id="btn-fire">Incendie</button>
           <span class="speed-control">
             <button id="btn-speed-down">−</button>
             <span id="speed-label">x1</span>
@@ -86,6 +89,7 @@ function readParams(): SimulationParams {
     soilProductivity: num('p-soil'),
     seasonPeriod: num('p-season-period'),
     seasonAmplitude: num('p-season-amplitude'),
+    eventRatePerTick: num('p-event-rate') / 1000,
     herbivoreSpecies: HERBIVORE_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: num(`p-herb-${p.id}`) })),
     predatorSpecies: PREDATOR_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: num(`p-pred-${p.id}`) })),
     scavengerSpecies: SCAVENGER_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: num(`p-scav-${p.id}`) })),
@@ -101,6 +105,7 @@ function writeParams(params: SimulationParams): void {
   (document.getElementById('p-soil') as HTMLInputElement).value = String(params.soilProductivity);
   (document.getElementById('p-season-period') as HTMLInputElement).value = String(params.seasonPeriod);
   (document.getElementById('p-season-amplitude') as HTMLInputElement).value = String(params.seasonAmplitude);
+  (document.getElementById('p-event-rate') as HTMLInputElement).value = String(params.eventRatePerTick * 1000);
   for (const s of params.herbivoreSpecies) {
     (document.getElementById(`p-herb-${s.id}`) as HTMLInputElement).value = String(s.initialCount);
   }
@@ -202,6 +207,16 @@ document.getElementById('btn-inspector-close')!.addEventListener('click', () => 
 });
 
 document.getElementById('btn-restart')!.addEventListener('click', restart);
+
+document.getElementById('btn-drought')!.addEventListener('click', () => {
+  sim.triggerEvent('drought');
+  renderFrame();
+});
+
+document.getElementById('btn-fire')!.addEventListener('click', () => {
+  sim.triggerEvent('fire');
+  renderFrame();
+});
 
 document.getElementById('btn-toggle-controls')!.addEventListener('click', (e) => {
   const panel = document.getElementById('controls-panel') as HTMLElement;

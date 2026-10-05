@@ -75,6 +75,17 @@ export class CanvasRenderer {
           this.ctx.fillRect(x * cs, y * cs, cs, cs);
         }
 
+        const drought = world.drought[i];
+        if (drought > 0) {
+          this.ctx.fillStyle = `rgba(215, 150, 40, ${drought * 0.4})`;
+          this.ctx.fillRect(x * cs, y * cs, cs, cs);
+        }
+        const scorch = world.scorch[i];
+        if (scorch > 0) {
+          this.ctx.fillStyle = `rgba(170, 40, 10, ${scorch * 0.6})`;
+          this.ctx.fillRect(x * cs, y * cs, cs, cs);
+        }
+
         const carrion = world.carrion[i];
         if (carrion >= CARRION_MIN_VISIBLE) this.drawCarrionCross(x, y, Math.min(1, carrion / CARRION_FULL_OPACITY));
       }

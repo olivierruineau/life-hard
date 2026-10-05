@@ -38,6 +38,22 @@ const MIN_FERTILITY = 0.15;
 const CARRION_DECAY_RATE = 0.01;
 const FERTILITY_PER_DECOMPOSED_CARRION = 0.004;
 
+// Climate events. A drought cuts the vegetation cap on a disc of cells for a while (full strength
+// for most of its duration, then easing back), so biomass withers gradually through the normal
+// regrowth rule. A fire wipes the biomass of a disc at once and leaves the soil to regrow; its
+// `scorch` mark only fades for display.
+const DROUGHT_MAX_CAP_LOSS = 0.8;
+const DROUGHT_EASE_FRACTION = 0.3;
+const SCORCH_DECAY = 0.985;
+
+interface Drought {
+  cx: number;
+  cy: number;
+  radius: number;
+  startTick: number;
+  endTick: number;
+}
+
 export class World {
   readonly width: number;
   readonly height: number;
@@ -58,6 +74,12 @@ export class World {
   readonly isWaterMask: Uint8Array;
   /** Organic matter (energy units) left by dead individuals, decomposing into soil fertility. */
   readonly carrion: Float32Array;
+  /** Drought intensity (0-1) per cell, 0 outside any active drought. */
+  readonly drought: Float32Array;
+  /** Fire mark (0-1) per cell, 1 when just burnt and decaying afterwards. */
+  readonly scorch: Float32Array;
+  private readonly droughts: Drought[] = [];
+  private scorchActive = false;
   private readonly consumedLastTick: Float32Array;
   private readonly seasonPeriod: number;
   private readonly seasonAmplitude: number;
@@ -85,6 +107,8 @@ export class World {
     this.isWaterMask = new Uint8Array(cellCount);
     this.consumedLastTick = new Float32Array(cellCount);
     this.carrion = new Float32Array(cellCount);
+    this.drought = new Float32Array(cellCount);
+    this.scorch = new Float32Array(cellCount);
 
     const elevationNoise = new ValueNoise2D(rng);
     const moistureNoise = new ValueNoise2D(rng);
@@ -146,6 +170,7 @@ export class World {
 
   /** Updates fertility from last tick's grazing pressure, applies season, and regrows vegetation. */
   step(tick: number): void {
+    this.updateEvents(tick);
     for (let y = 0; y < this.height; y++) {
       const seasonalFactor = this.seasonalFactorAt(y, tick);
       for (let x = 0; x < this.width; x++) {
@@ -173,11 +198,75 @@ export class World {
           this.fertility[i] = Math.min(1, this.fertility[i] + decomposed * FERTILITY_PER_DECOMPOSED_CARRION);
         }
 
-        const max = base * this.fertility[i] * seasonalFactor;
+        const max = base * this.fertility[i] * seasonalFactor * (1 - DROUGHT_MAX_CAP_LOSS * this.drought[i]);
         this.biomassMax[i] = max;
         const deficit = max - this.biomass[i];
         this.biomass[i] += deficit * this.regrowRate[i];
       }
+    }
+  }
+
+  /** Starts a drought on a disc centered on (cx, cy) lasting `duration` ticks from `tick`. */
+  startDrought(cx: number, cy: number, radius: number, tick: number, duration: number): void {
+    this.droughts.push({ cx, cy, radius, startTick: tick, endTick: tick + duration });
+  }
+
+  /** Burns every plant on a disc centered on (cx, cy): biomass drops to 0 and regrows from there. */
+  startFire(cx: number, cy: number, radius: number): void {
+    this.forEachCellInDisc(cx, cy, radius, (i) => {
+      if (this.baseBiomassMax[i] <= 0) return;
+      this.biomass[i] = 0;
+      this.scorch[i] = 1;
+      this.scorchActive = true;
+    });
+  }
+
+  get activeDroughtCount(): number {
+    return this.droughts.length;
+  }
+
+  private forEachCellInDisc(cx: number, cy: number, radius: number, fn: (i: number) => void): void {
+    const r2 = radius * radius;
+    const y0 = Math.max(0, Math.floor(cy - radius));
+    const y1 = Math.min(this.height - 1, Math.ceil(cy + radius));
+    const x0 = Math.max(0, Math.floor(cx - radius));
+    const x1 = Math.min(this.width - 1, Math.ceil(cx + radius));
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const dx = x - cx;
+        const dy = y - cy;
+        if (dx * dx + dy * dy <= r2) fn(y * this.width + x);
+      }
+    }
+  }
+
+  private updateEvents(tick: number): void {
+    if (this.droughts.length > 0) {
+      this.drought.fill(0);
+      for (let k = this.droughts.length - 1; k >= 0; k--) {
+        const d = this.droughts[k];
+        if (tick >= d.endTick) {
+          this.droughts.splice(k, 1);
+          continue;
+        }
+        const duration = d.endTick - d.startTick;
+        const remaining = (d.endTick - tick) / (duration * DROUGHT_EASE_FRACTION);
+        const intensity = Math.min(1, remaining);
+        this.forEachCellInDisc(d.cx, d.cy, d.radius, (i) => {
+          if (intensity > this.drought[i]) this.drought[i] = intensity;
+        });
+      }
+      if (this.droughts.length === 0) this.drought.fill(0);
+    }
+    if (this.scorchActive) {
+      let any = false;
+      for (let i = 0; i < this.scorch.length; i++) {
+        if (this.scorch[i] === 0) continue;
+        this.scorch[i] *= SCORCH_DECAY;
+        if (this.scorch[i] < 0.02) this.scorch[i] = 0;
+        else any = true;
+      }
+      this.scorchActive = any;
     }
   }
 

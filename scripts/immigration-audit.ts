@@ -36,7 +36,8 @@ if (process.env.COST_SCALE) {
 }
 for (let k = seedStart; k < seedEnd; k++) {
   const seed = `audit-${k}`;
-  const sim = new Simulation({ ...DEFAULT_SIMULATION_PARAMS, seed });
+  const eventRatePerTick = process.env.EVENT_RATE !== undefined ? Number(process.env.EVENT_RATE) : DEFAULT_SIMULATION_PARAMS.eventRatePerTick;
+  const sim = new Simulation({ ...DEFAULT_SIMULATION_PARAMS, seed, eventRatePerTick });
   const stats = sim.predatorSpecies.map(() => ({ extinctAt: -1, min: Infinity, sum: 0, zeroTicks: 0 }));
   let herbMin = Infinity;
   let herbMax = 0;

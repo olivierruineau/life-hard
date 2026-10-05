@@ -198,6 +198,8 @@ export interface SimulationParams {
   seasonPeriod: number;
   /** Max fractional swing (0-1) a seasonal cycle applies to biomassMax at the map's edges. */
   seasonAmplitude: number;
+  /** Probability per tick that a random climate event (drought or fire) strikes. 0 disables them. */
+  eventRatePerTick: number;
   herbivoreSpecies: SpeciesSelection[];
   predatorSpecies: SpeciesSelection[];
   scavengerSpecies: SpeciesSelection[];
@@ -212,6 +214,7 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   soilProductivity: 1,
   seasonPeriod: 1200,
   seasonAmplitude: 0.15,
+  eventRatePerTick: 1 / 2500,
   herbivoreSpecies: HERBIVORE_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
   predatorSpecies: PREDATOR_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
   scavengerSpecies: SCAVENGER_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
@@ -224,18 +227,25 @@ export interface ScavengerSpeciesInstance {
   population: ScavengerPopulation;
 }
 
+export type ClimateEventKind = 'drought' | 'fire';
+
+const DROUGHT_DURATION = 500;
+
 export class Simulation {
   readonly world: World;
   readonly herbivoreSpecies: HerbivoreSpeciesInstance[];
   readonly predatorSpecies: PredatorSpeciesInstance[];
   readonly scavengerSpecies: ScavengerSpeciesInstance[];
   private readonly rng: Rng;
+  /** Separate stream so that rolling for events never shifts the population dynamics' draws. */
+  private readonly eventRng: Rng;
   readonly params: SimulationParams;
   tick = 0;
 
   constructor(params: SimulationParams) {
     this.params = params;
     this.rng = mulberry32(hashStringToSeed(params.seed));
+    this.eventRng = mulberry32(hashStringToSeed(`${params.seed}:events`));
     this.world = new World({
       width: params.width,
       height: params.height,
@@ -286,7 +296,20 @@ export class Simulation {
     }
   }
 
+  /** Strikes a drought (wide, lasting) or a fire (smaller, instant) at a random place, or at (x, y) if given. */
+  triggerEvent(kind: ClimateEventKind, x?: number, y?: number): void {
+    const { width, height } = this.world;
+    const cx = x ?? this.eventRng() * width;
+    const cy = y ?? this.eventRng() * height;
+    const scale = Math.min(width, height);
+    if (kind === 'drought') this.world.startDrought(cx, cy, scale * 0.22, this.tick, DROUGHT_DURATION);
+    else this.world.startFire(cx, cy, scale * 0.12);
+  }
+
   step(): void {
+    if (this.params.eventRatePerTick > 0 && this.eventRng() < this.params.eventRatePerTick) {
+      this.triggerEvent(this.eventRng() < 0.5 ? 'drought' : 'fire');
+    }
     this.world.step(this.tick);
     for (const h of this.herbivoreSpecies) h.population.moveAndFeed(this.world, this.rng);
     for (const p of this.predatorSpecies) p.population.moveAndHunt(this.world, p.prey, this.rng);

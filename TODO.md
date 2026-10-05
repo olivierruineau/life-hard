@@ -7,7 +7,6 @@
   énergétique : un échelon au-dessus de prédateurs d'une cinquantaine
   d'individus n'a presque rien à capter, il faudra du rééquilibrage et sans
   doute de la migration.
-- Événements : sécheresse, incendie.
 - Sauvegarde / chargement d'une simulation + export CSV des populations.
 
 ## Pistes d'équilibrage
