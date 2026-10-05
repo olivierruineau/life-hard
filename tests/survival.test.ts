@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { HERBIVORE_SPECIES_PRESETS, PREDATOR_SPECIES_PRESETS } from '../src/engine/simulation.ts';
+import { HERBIVORE_SPECIES_PRESETS, PREDATOR_SPECIES_PRESETS, SCAVENGER_SPECIES_PRESETS } from '../src/engine/simulation.ts';
 import { fractionZero, makeParams, run } from './helpers.ts';
 
 const TICKS = 2500;
@@ -22,6 +22,11 @@ for (const seed of SEEDS) {
     for (const p of PREDATOR_SPECIES_PRESETS) {
       const s = series.get(p.id)!;
       assert.ok(fractionZero(s) < 0.1, `${p.id} absent too often. ${hint}`);
+    }
+    for (const c of SCAVENGER_SPECIES_PRESETS) {
+      const s = series.get(c.id)!;
+      assert.ok(fractionZero(s) < 0.05, `${c.id} absent too often. ${hint}`);
+      assert.ok(Math.max(...s) < 600, `${c.id} exploded. ${hint}`);
     }
   });
 }

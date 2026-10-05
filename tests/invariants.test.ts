@@ -33,7 +33,7 @@ test('population and world state stay valid over a long run', () => {
   for (let t = 0; t < 1500; t++) {
     sim.step();
     if (t % 100 !== 0) continue;
-    for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies]) checkPopulation(s.id, s.population, sim);
+    for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies, ...sim.scavengerSpecies]) checkPopulation(s.id, s.population, sim);
     for (let i = 0; i < sim.world.biomass.length; i++) {
       assert.ok(Number.isFinite(sim.world.biomass[i]) && sim.world.biomass[i] >= 0, `biomass[${i}] invalid at tick ${sim.tick}`);
       const f = sim.world.fertility[i];

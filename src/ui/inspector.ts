@@ -1,6 +1,7 @@
 import { Biome } from '../engine/biome.ts';
 import type { HerbivorePopulation } from '../engine/herbivore.ts';
 import type { PredatorPopulation } from '../engine/predator.ts';
+import type { ScavengerPopulation } from '../engine/scavenger.ts';
 import type { Simulation } from '../engine/simulation.ts';
 
 export type Selection =
@@ -36,7 +37,7 @@ const BIOME_LABELS: Record<Biome, string> = {
 };
 const BIOME_LIST = Object.values(Biome);
 
-type AnyPopulation = HerbivorePopulation | PredatorPopulation;
+type AnyPopulation = HerbivorePopulation | PredatorPopulation | ScavengerPopulation;
 
 interface SpeciesRef {
   id: string;
@@ -50,6 +51,7 @@ function allSpecies(sim: Simulation): SpeciesRef[] {
   return [
     ...sim.herbivoreSpecies.map((s) => ({ ...s, predator: false })),
     ...sim.predatorSpecies.map((s) => ({ ...s, predator: true })),
+    ...sim.scavengerSpecies.map((s) => ({ ...s, predator: false })),
   ];
 }
 

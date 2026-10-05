@@ -3,6 +3,7 @@ import {
   DEFAULT_SIMULATION_PARAMS,
   HERBIVORE_SPECIES_PRESETS,
   PREDATOR_SPECIES_PRESETS,
+  SCAVENGER_SPECIES_PRESETS,
   Simulation,
   type SimulationParams,
 } from './engine/simulation.ts';
@@ -14,6 +15,9 @@ const herbivoreControls = HERBIVORE_SPECIES_PRESETS.map(
 ).join('');
 const predatorControls = PREDATOR_SPECIES_PRESETS.map(
   (p) => `<label class="control">${p.label}<input id="p-pred-${p.id}" type="number" min="0" max="500" step="1" /></label>`,
+).join('');
+const scavengerControls = SCAVENGER_SPECIES_PRESETS.map(
+  (p) => `<label class="control">${p.label}<input id="p-scav-${p.id}" type="number" min="0" max="300" step="1" /></label>`,
 ).join('');
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -35,6 +39,7 @@ app.innerHTML = `
         <label class="control">Amplitude saisonnière<input id="p-season-amplitude" type="number" min="0" max="0.8" step="0.05" /></label>
         ${herbivoreControls}
         ${predatorControls}
+        ${scavengerControls}
         <div id="actions">
           <button id="btn-restart">Nouvelle simulation</button>
           <button id="btn-toggle">Pause</button>
@@ -81,6 +86,7 @@ function readParams(): SimulationParams {
     seasonAmplitude: num('p-season-amplitude'),
     herbivoreSpecies: HERBIVORE_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: num(`p-herb-${p.id}`) })),
     predatorSpecies: PREDATOR_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: num(`p-pred-${p.id}`) })),
+    scavengerSpecies: SCAVENGER_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: num(`p-scav-${p.id}`) })),
   };
 }
 
@@ -98,6 +104,9 @@ function writeParams(params: SimulationParams): void {
   }
   for (const s of params.predatorSpecies) {
     (document.getElementById(`p-pred-${s.id}`) as HTMLInputElement).value = String(s.initialCount);
+  }
+  for (const s of params.scavengerSpecies) {
+    (document.getElementById(`p-scav-${s.id}`) as HTMLInputElement).value = String(s.initialCount);
   }
 }
 
@@ -193,7 +202,7 @@ function renderFrame(): void {
   (document.getElementById('stat-tick') as HTMLElement).textContent = String(sim.tick);
   (document.getElementById('stat-season') as HTMLElement).textContent = seasonLabel(sim.tick, sim.params.seasonPeriod);
   const statSpecies = document.getElementById('stat-species') as HTMLElement;
-  statSpecies.innerHTML = [...sim.herbivoreSpecies, ...sim.predatorSpecies]
+  statSpecies.innerHTML = [...sim.herbivoreSpecies, ...sim.predatorSpecies, ...sim.scavengerSpecies]
     .map(
       (s) =>
         `<span style="color: hsl(${s.hueOffset}, 70%, 55%)">${s.label}: <strong>${s.population.length}</strong></span>`,
@@ -233,7 +242,7 @@ document.getElementById('btn-toggle')!.addEventListener('click', (e) => {
 });
 
 function recordHistory(): void {
-  for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies]) {
+  for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies, ...sim.scavengerSpecies]) {
     speciesHue.set(s.id, s.hueOffset);
     const history = speciesHistory.get(s.id) ?? [];
     history.push(s.population.length);

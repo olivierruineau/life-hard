@@ -38,6 +38,7 @@ export function fingerprint(sim: Simulation): string {
     biomass.toFixed(3),
     ...sim.herbivoreSpecies.map((s) => `${s.id}:${summarize(s.population)}`),
     ...sim.predatorSpecies.map((s) => `${s.id}:${summarize(s.population)}`),
+    ...sim.scavengerSpecies.map((s) => `${s.id}:${summarize(s.population)}`),
   ].join('|');
 }
 
@@ -50,7 +51,7 @@ export interface RunStats {
 export function run(params: SimulationParams, ticks: number, sampleEvery = 10): RunStats {
   const sim = new Simulation(params);
   const series = new Map<string, number[]>();
-  const species = [...sim.herbivoreSpecies, ...sim.predatorSpecies];
+  const species = [...sim.herbivoreSpecies, ...sim.predatorSpecies, ...sim.scavengerSpecies];
   for (const s of species) series.set(s.id, []);
   for (let t = 0; t < ticks; t++) {
     sim.step();

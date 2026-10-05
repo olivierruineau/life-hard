@@ -187,6 +187,14 @@ export class World {
     if (amount > 0 && this.isWaterMask[i] === 0) this.carrion[i] += amount;
   }
 
+  /** Removes up to `amount` carrion from a cell and returns what was actually taken. */
+  consumeCarrion(x: number, y: number, amount: number): number {
+    const i = this.index(x, y);
+    const taken = Math.min(this.carrion[i], amount);
+    this.carrion[i] -= taken;
+    return taken;
+  }
+
   consume(x: number, y: number, amount: number): number {
     const i = this.index(x, y);
     const taken = Math.min(this.biomass[i], amount);

@@ -2,13 +2,11 @@
 
 ## Évolutions envisagées
 
-- **Couche trophique supplémentaire** (à discuter avant de coder) :
-  - décomposeur : les cadavres rendent de la fertilité au sol (aujourd'hui un
-    individu mort disparaît sans rien restituer, le cycle des nutriments est ouvert) ;
-  - ou super-prédateur chassant les prédateurs actuels (cascade trophique).
-  Attention au budget énergétique : chaque échelon n'en retient qu'une fraction,
-  un échelon de plus risque de ne jamais persister (les prédateurs actuels ont
-  déjà demandé rééquilibrage + migration depuis le bord).
+- **Super-prédateur** chassant les prédateurs actuels (cascade trophique). Les
+  décomposeurs (cadavres) et les charognards sont faits. Attention au budget
+  énergétique : un échelon au-dessus de prédateurs d'une cinquantaine
+  d'individus n'a presque rien à capter, il faudra du rééquilibrage et sans
+  doute de la migration.
 - Événements : sécheresse, incendie.
 - Graphique : légende et axes (l'inspecteur est fait, pas la légende).
 - Sauvegarde / chargement d'une simulation + export CSV des populations.

@@ -11,7 +11,7 @@ test('individual ids stay strictly increasing and resolve to the same individual
   let alive = true;
   for (let t = 0; t < 300; t++) {
     sim.step();
-    for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies]) {
+    for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies, ...sim.scavengerSpecies]) {
       const pop = s.population;
       for (let i = 1; i < pop.length; i++) assert.ok(pop.id[i] > pop.id[i - 1], `${s.id} ids not sorted at tick ${sim.tick}`);
       for (let i = 0; i < pop.length; i += 7) assert.equal(pop.indexOfId(pop.id[i]), i);
@@ -27,7 +27,7 @@ test('picking an individual follows it across ticks, then reports its death', ()
   const pop = sim.herbivoreSpecies[0].population;
   const selection = pickAt(sim, pop.x[0], pop.y[0]);
   assert.ok(selection.kind === 'individual');
-  const label = [...sim.herbivoreSpecies, ...sim.predatorSpecies].find((s) => s.id === selection.speciesId)!.label;
+  const label = [...sim.herbivoreSpecies, ...sim.predatorSpecies, ...sim.scavengerSpecies].find((s) => s.id === selection.speciesId)!.label;
 
   for (let t = 0; t < 3; t++) sim.step();
   const result = inspect(sim, selection);
@@ -35,7 +35,7 @@ test('picking an individual follows it across ticks, then reports its death', ()
   expect(result.html).toContain(label);
   expect(result.html).toContain('Gènes');
 
-  for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies]) s.population.length = 0;
+  for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies, ...sim.scavengerSpecies]) s.population.length = 0;
   const dead = inspect(sim, selection);
   expect(dead.overlay.dead).toBe(true);
   expect(dead.html).toContain('Décédé');
@@ -44,7 +44,7 @@ test('picking an individual follows it across ticks, then reports its death', ()
 
 test('picking an empty cell selects the cell and describes it', () => {
   const sim = new Simulation(makeParams({ seed: 'inspector-cell' }));
-  for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies]) s.population.length = 0;
+  for (const s of [...sim.herbivoreSpecies, ...sim.predatorSpecies, ...sim.scavengerSpecies]) s.population.length = 0;
   const selection = pickAt(sim, 10, 10);
   assert.equal(selection.kind, 'cell');
   const { html } = inspect(sim, selection);

@@ -98,6 +98,26 @@ export class CanvasRenderer {
       }
     }
 
+    const scavengerRadius = Math.max(0.8, cs * 0.4);
+    for (const species of sim.scavengerSpecies) {
+      const pop = species.population;
+      this.ctx.lineWidth = Math.max(0.5, cs * 0.08);
+      this.ctx.strokeStyle = '#0a0a0a';
+      for (let i = 0; i < pop.length; i++) {
+        const cx = pop.x[i] * cs + cs / 2;
+        const cy = pop.y[i] * cs + cs / 2;
+        this.ctx.fillStyle = pop.color(i, species.hueOffset, SPECIES_HUE_SPAN);
+        this.ctx.beginPath();
+        this.ctx.moveTo(cx, cy - scavengerRadius);
+        this.ctx.lineTo(cx + scavengerRadius, cy);
+        this.ctx.lineTo(cx, cy + scavengerRadius);
+        this.ctx.lineTo(cx - scavengerRadius, cy);
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.stroke();
+      }
+    }
+
     if (overlay) this.drawOverlay(overlay);
   }
 

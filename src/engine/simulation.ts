@@ -8,6 +8,11 @@ import {
   type HerbivoreParams,
 } from './herbivore.ts';
 import { DEFAULT_PREDATOR_PARAMS, DEFAULT_PREDATOR_PHENOTYPE_RANGES, PredatorPopulation, type PredatorParams } from './predator.ts';
+import {
+  DEFAULT_SCAVENGER_PARAMS,
+  ScavengerPopulation,
+  type ScavengerParams,
+} from './scavenger.ts';
 import { hashStringToSeed, mulberry32, type Rng } from './random.ts';
 import { World } from './world.ts';
 
@@ -33,6 +38,14 @@ export interface PredatorSpeciesPreset {
   params: PredatorParams;
   /** id of the HerbivoreSpeciesPreset this predator hunts. */
   preyId: string;
+}
+
+export interface ScavengerSpeciesPreset {
+  id: string;
+  label: string;
+  hueOffset: number;
+  defaultInitialCount: number;
+  params: ScavengerParams;
 }
 
 export interface HerbivoreSpeciesInstance {
@@ -163,6 +176,16 @@ export const PREDATOR_SPECIES_PRESETS: PredatorSpeciesPreset[] = [
   },
 ];
 
+export const SCAVENGER_SPECIES_PRESETS: ScavengerSpeciesPreset[] = [
+  {
+    id: 'carrion-eater',
+    label: 'Charognards',
+    hueOffset: 315,
+    defaultInitialCount: 10,
+    params: DEFAULT_SCAVENGER_PARAMS,
+  },
+];
+
 export interface SimulationParams {
   width: number;
   height: number;
@@ -177,6 +200,7 @@ export interface SimulationParams {
   seasonAmplitude: number;
   herbivoreSpecies: SpeciesSelection[];
   predatorSpecies: SpeciesSelection[];
+  scavengerSpecies: SpeciesSelection[];
 }
 
 export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
@@ -190,12 +214,21 @@ export const DEFAULT_SIMULATION_PARAMS: SimulationParams = {
   seasonAmplitude: 0.15,
   herbivoreSpecies: HERBIVORE_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
   predatorSpecies: PREDATOR_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
+  scavengerSpecies: SCAVENGER_SPECIES_PRESETS.map((p) => ({ id: p.id, initialCount: p.defaultInitialCount })),
 };
+
+export interface ScavengerSpeciesInstance {
+  id: string;
+  label: string;
+  hueOffset: number;
+  population: ScavengerPopulation;
+}
 
 export class Simulation {
   readonly world: World;
   readonly herbivoreSpecies: HerbivoreSpeciesInstance[];
   readonly predatorSpecies: PredatorSpeciesInstance[];
+  readonly scavengerSpecies: ScavengerSpeciesInstance[];
   private readonly rng: Rng;
   readonly params: SimulationParams;
   tick = 0;
@@ -242,14 +275,25 @@ export class Simulation {
         prey: preyInstance.population,
       });
     }
+
+    this.scavengerSpecies = [];
+    for (const preset of SCAVENGER_SPECIES_PRESETS) {
+      const count = params.scavengerSpecies.find((s) => s.id === preset.id)?.initialCount ?? 0;
+      if (count <= 0) continue;
+      const population = new ScavengerPopulation(preset.params);
+      population.spawnRandom(this.world, count, this.rng);
+      this.scavengerSpecies.push({ id: preset.id, label: preset.label, hueOffset: preset.hueOffset, population });
+    }
   }
 
   step(): void {
     this.world.step(this.tick);
     for (const h of this.herbivoreSpecies) h.population.moveAndFeed(this.world, this.rng);
     for (const p of this.predatorSpecies) p.population.moveAndHunt(this.world, p.prey, this.rng);
+    for (const c of this.scavengerSpecies) c.population.moveAndFeed(this.world, this.rng);
     for (const h of this.herbivoreSpecies) h.population.reproduceAndCleanup(this.world, this.rng);
     for (const p of this.predatorSpecies) p.population.reproduceAndCleanup(this.world, this.rng);
+    for (const c of this.scavengerSpecies) c.population.reproduceAndCleanup(this.world, this.rng);
     this.tick++;
   }
 }
