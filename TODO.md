@@ -15,6 +15,4 @@
 
 ## Pistes d'équilibrage
 
-- L'immigration des herbivores reste l'ancien mécanisme à seuil
-  (`immigrationThreshold`) ; le passer sur le modèle de `migrateFromEdge`.
 - ~2 runs sur 16 dépassent encore 1500 herbivores (non diagnostiqué).

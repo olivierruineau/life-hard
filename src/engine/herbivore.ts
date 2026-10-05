@@ -49,10 +49,10 @@ export interface HerbivoreParams extends ReproductionParams {
   /** Hard cap: an individual dies of old age at this tick count regardless of energy. */
   maxAge: number;
 
-  /** Population at/below which stray individuals may wander in from outside the mapped area. */
-  immigrationThreshold: number;
-  /** Per-tick probability of a wandering-in arrival while the population is at/below that threshold. */
-  immigrationChancePerTick: number;
+  /** Per-tick probability that one individual walks in from the map's edge (constant flux, independent of population size). */
+  edgeMigrationPerTick: number;
+  /** Energy a migrant arrives with, as a fraction of `initialEnergy` (travel leaves them worn). */
+  migrantEnergyFraction: number;
 }
 
 export const DEFAULT_PHENOTYPE_RANGES: PhenotypeRanges = {
@@ -95,12 +95,10 @@ export const DEFAULT_HERBIVORE_PARAMS: HerbivoreParams = {
   senescenceRate: 0.02,
   maxAge: 550,
 
-  // A small closed
-  // population sharing its food supply with a competing species can still get unlucky into
-  // extinction no matter how the hunting/competition economics are tuned — a low-rate trickle of
-  // outside arrivals is what turns a bad patch into a recoverable dip instead of a dead species.
-  immigrationThreshold: 6,
-  immigrationChancePerTick: 0.03,
+  // The map is one patch of a wider metapopulation: a steady trickle of outsiders keeps arriving
+  // across the border whatever the local count, so a bad stretch is a dip, not an extinction.
+  edgeMigrationPerTick: 0.01,
+  migrantEnergyFraction: 0.6,
 };
 
 /**
@@ -112,6 +110,8 @@ export const DEFAULT_HERBIVORE_PARAMS: HerbivoreParams = {
  */
 export class HerbivorePopulation {
   length = 0;
+  /** Cumulative count of individuals that arrived via `migrateFromEdge` (diagnostic). */
+  migrantCount = 0;
   private capacity = 0;
   private nextId = 0;
   /** Stable per-individual id, strictly increasing with index (compaction keeps order and births
@@ -340,20 +340,28 @@ export class HerbivorePopulation {
       }
     }
 
-    this.immigrate(world, rng);
+    this.migrateFromEdge(world, rng);
   }
 
-  private immigrate(world: World, rng: Rng): void {
-    if (this.length > this.params.immigrationThreshold) return;
-    if (rng() >= this.params.immigrationChancePerTick) return;
+  /** Same model as PredatorPopulation.migrateFromEdge: a steady border arrival sharing the resident gene pool. */
+  private migrateFromEdge(world: World, rng: Rng): void {
+    if (rng() >= this.params.edgeMigrationPerTick) return;
 
-    let attempts = 0;
-    while (attempts < 50) {
-      attempts++;
-      const x = Math.floor(rng() * world.width);
-      const y = Math.floor(rng() * world.height);
+    for (let attempts = 0; attempts < 50; attempts++) {
+      const along = rng();
+      const side = Math.floor(rng() * 4);
+      const x = side === 0 ? 0 : side === 1 ? world.width - 1 : Math.floor(along * world.width);
+      const y = side === 2 ? 0 : side === 3 ? world.height - 1 : Math.floor(along * world.height);
       if (world.isWater(x, y)) continue;
-      this.append(x, y, this.params.initialEnergy, seedGenes(rng));
+      const energy = this.params.initialEnergy * this.params.migrantEnergyFraction;
+      if (this.length === 0) {
+        this.append(x, y, energy, seedGenes(rng));
+      } else {
+        const kin = Math.floor(rng() * this.length);
+        const genes = mutateGenes(this.geneSpeed[kin], this.geneVision[kin], this.geneFertility[kin], this.geneEfficiency[kin], rng);
+        this.append(x, y, energy, genes);
+      }
+      this.migrantCount++;
       return;
     }
   }
