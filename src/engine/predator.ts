@@ -9,7 +9,7 @@ import {
   type PhenotypeRanges,
 } from './genetics.ts';
 import type { HerbivorePopulation } from './herbivore.ts';
-import { chooseGreedyMove, SpatialGrid } from './movement.ts';
+import { chooseGreedyMove, randomBorderLandCell, SpatialGrid } from './movement.ts';
 import type { Rng } from './random.ts';
 import { performMating, type ReproductionParams } from './reproduction.ts';
 import type { World } from './world.ts';
@@ -404,22 +404,17 @@ export class PredatorPopulation {
   private migrateFromEdge(world: World, rng: Rng): void {
     if (rng() >= this.params.edgeMigrationPerTick) return;
 
-    for (let attempts = 0; attempts < 50; attempts++) {
-      const along = rng();
-      const side = Math.floor(rng() * 4);
-      const x = side === 0 ? 0 : side === 1 ? world.width - 1 : Math.floor(along * world.width);
-      const y = side === 2 ? 0 : side === 3 ? world.height - 1 : Math.floor(along * world.height);
-      if (world.isWater(x, y)) continue;
-      const energy = this.params.initialEnergy * this.params.migrantEnergyFraction;
-      if (this.length === 0) {
-        this.append(x, y, energy, seedGenes(rng));
-      } else {
-        const kin = Math.floor(rng() * this.length);
-        const genes = mutateGenes(this.geneSpeed[kin], this.geneVision[kin], this.geneFertility[kin], this.geneEfficiency[kin], rng);
-        this.append(x, y, energy, genes);
-      }
-      this.migrantCount++;
-      return;
+    const cell = randomBorderLandCell(world, rng);
+    if (!cell) return;
+    const [x, y] = cell;
+    const energy = this.params.initialEnergy * this.params.migrantEnergyFraction;
+    if (this.length === 0) {
+      this.append(x, y, energy, seedGenes(rng));
+    } else {
+      const kin = Math.floor(rng() * this.length);
+      const genes = mutateGenes(this.geneSpeed[kin], this.geneVision[kin], this.geneFertility[kin], this.geneEfficiency[kin], rng);
+      this.append(x, y, energy, genes);
     }
+    this.migrantCount++;
   }
 }

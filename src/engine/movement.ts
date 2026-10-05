@@ -149,3 +149,15 @@ export class SpatialGrid {
     return this.cellStartArr[cell + 1] - this.cellStartArr[cell];
   }
 }
+
+/** A random land cell on the map's border (random side), or null if 50 tries all hit water. */
+export function randomBorderLandCell(world: World, rng: Rng): [number, number] | null {
+  for (let attempts = 0; attempts < 50; attempts++) {
+    const along = rng();
+    const side = Math.floor(rng() * 4);
+    const x = side === 0 ? 0 : side === 1 ? world.width - 1 : Math.floor(along * world.width);
+    const y = side === 2 ? 0 : side === 3 ? world.height - 1 : Math.floor(along * world.height);
+    if (!world.isWater(x, y)) return [x, y];
+  }
+  return null;
+}
