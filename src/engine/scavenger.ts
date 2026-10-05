@@ -37,6 +37,7 @@ export const DEFAULT_SCAVENGER_PHENOTYPE_RANGES: PhenotypeRanges = {
   swimCost: [3, 1],
   baseRestMetabolism: 0.5,
   restMetabolismGeneFactor: 0.06,
+  geneCostCurvature: 3,
   conversionEfficiency: [0.4, 0.7],
   matingEnergyThreshold: [70, 110],
   maxLitterSize: [1, 2],

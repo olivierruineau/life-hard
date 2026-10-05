@@ -124,9 +124,24 @@ export interface PhenotypeRanges {
   swimCost: readonly [number, number];
   baseRestMetabolism: number;
   restMetabolismGeneFactor: number;
+  /** Convexity (>= 0) of the speed and efficiency upkeep; 0 = linear, higher = steeper at the top. */
+  geneCostCurvature: number;
   conversionEfficiency: readonly [number, number];
   matingEnergyThreshold: readonly [number, number];
   maxLitterSize: readonly [number, number];
+}
+
+/**
+ * Upkeep paid for a "performance" gene (speed, efficiency) in metabolism units. The marginal cost of
+ * each extra point of performance grows (approaching a physical limit is expensive), so the cost is
+ * exponential in the gene rather than linear: factor * c * (e^(k g) - 1) / (e^k - 1). `c` is chosen
+ * so that a mid-range gene (0.5) costs exactly `factor * 0.5`, the same as the old linear upkeep —
+ * only the slope moves: cheaper than before below 0.5, dearer above it.
+ */
+export function convexGeneCost(gene: number, factor: number, curvature: number): number {
+  if (curvature < 1e-6) return factor * gene;
+  const scale = 0.5 * (Math.exp(curvature / 2) + 1);
+  return (factor * scale * Math.expm1(curvature * gene)) / Math.expm1(curvature);
 }
 
 export function derivePhenotype(
@@ -140,7 +155,11 @@ export function derivePhenotype(
     visionRadius: Math.round(lerp(...ranges.visionRadius, vision)),
     moveCost: lerp(...ranges.moveCost, speed),
     swimCost: lerp(...ranges.swimCost, speed),
-    restMetabolism: ranges.baseRestMetabolism + (vision + speed + fertility + efficiency) * ranges.restMetabolismGeneFactor,
+    restMetabolism:
+      ranges.baseRestMetabolism +
+      (vision + fertility) * ranges.restMetabolismGeneFactor +
+      convexGeneCost(speed, ranges.restMetabolismGeneFactor, ranges.geneCostCurvature) +
+      convexGeneCost(efficiency, ranges.restMetabolismGeneFactor, ranges.geneCostCurvature),
     conversionEfficiency: lerp(...ranges.conversionEfficiency, efficiency),
     matingEnergyThreshold: lerp(...ranges.matingEnergyThreshold, 1 - fertility),
     maxLitterSize: Math.round(lerp(...ranges.maxLitterSize, fertility)),

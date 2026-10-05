@@ -1,4 +1,4 @@
-import { DEFAULT_SIMULATION_PARAMS, HERBIVORE_SPECIES_PRESETS, PREDATOR_SPECIES_PRESETS, Simulation } from '../src/engine/simulation.ts';
+import { DEFAULT_SIMULATION_PARAMS, HERBIVORE_SPECIES_PRESETS, PREDATOR_SPECIES_PRESETS, SCAVENGER_SPECIES_PRESETS, Simulation } from '../src/engine/simulation.ts';
 
 // Usage: tsx scripts/immigration-audit.ts [ticks=8000] [seedStart=0] [seedEnd=6] [immigration=on|off]
 // PRED_OVERRIDE='{"catchBaseChance":0.3,"plains-courser":{...}}' merges PredatorParams into every preset (or one, via its id key).
@@ -13,6 +13,14 @@ if (process.env.PRED_OVERRIDE) {
   for (const p of PREDATOR_SPECIES_PRESETS) {
     const { 'plains-courser': courser, 'forest-stalker': stalker, ...shared } = override;
     Object.assign(p.params, shared, p.id === 'plains-courser' ? courser : stalker);
+  }
+}
+
+if (process.env.CURVE !== undefined) {
+  // Overrides geneCostCurvature (0 = old linear upkeep) on every species' phenotype ranges.
+  const curvature = Number(process.env.CURVE);
+  for (const p of [...HERBIVORE_SPECIES_PRESETS, ...PREDATOR_SPECIES_PRESETS, ...SCAVENGER_SPECIES_PRESETS]) {
+    p.params.phenotypeRanges.geneCostCurvature = curvature;
   }
 }
 

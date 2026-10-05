@@ -55,6 +55,7 @@ export const DEFAULT_PREDATOR_PHENOTYPE_RANGES: PhenotypeRanges = {
   swimCost: [1, 0.5],
   baseRestMetabolism: 0.18,
   restMetabolismGeneFactor: 0.028,
+  geneCostCurvature: 3,
   conversionEfficiency: [0.55, 0.85],
   matingEnergyThreshold: [70, 100],
   maxLitterSize: [1, 3],

@@ -63,6 +63,7 @@ export const DEFAULT_PHENOTYPE_RANGES: PhenotypeRanges = {
   swimCost: [6, 2],
   baseRestMetabolism: 1.2,
   restMetabolismGeneFactor: 0.2,
+  geneCostCurvature: 3,
   conversionEfficiency: [0.35, 0.65],
   matingEnergyThreshold: [60, 100],
   maxLitterSize: [1, 4],
