@@ -9,6 +9,8 @@ import {
 } from './engine/simulation.ts';
 import { CanvasRenderer } from './render/canvasRenderer.ts';
 import { drawLineChart } from './ui/chart.ts';
+import { historyToCsv } from './ui/csv.ts';
+import { parseSave, serializeSave } from './ui/saveFile.ts';
 import { GENE_COLORS, GENE_KEYS, GENE_LABELS, GeneHistory } from './ui/geneStats.ts';
 import { inspect, pickAt, type Selection } from './ui/inspector.ts';
 
@@ -49,6 +51,11 @@ app.innerHTML = `
           <button id="btn-step">+1 tick</button>
           <button id="btn-drought">Sécheresse</button>
           <button id="btn-fire">Incendie</button>
+          <button id="btn-save">Sauvegarder</button>
+          <button id="btn-load">Charger</button>
+          <button id="btn-csv">Export CSV</button>
+          <input id="file-load" type="file" accept=".json,application/json" hidden />
+          <span id="io-message" role="status"></span>
           <span class="speed-control">
             <button id="btn-speed-down">−</button>
             <span id="speed-label">x1</span>
@@ -245,6 +252,61 @@ document.getElementById('btn-inspector-close')!.addEventListener('click', () => 
 });
 
 document.getElementById('btn-restart')!.addEventListener('click', restart);
+
+function download(filename: string, content: string, type: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function say(message: string): void {
+  (document.getElementById('io-message') as HTMLElement).textContent = message;
+}
+
+function fileStamp(): string {
+  return `${sim.params.seed}-t${sim.tick}`.replace(/[^\w.-]+/g, '_');
+}
+
+document.getElementById('btn-save')!.addEventListener('click', () => {
+  download(`life-hard-${fileStamp()}.json`, serializeSave(sim.snapshot(), speciesHistory, speciesHue, geneHistory), 'application/json');
+  say(`Sauvegardé au tick ${sim.tick}.`);
+});
+
+document.getElementById('btn-csv')!.addEventListener('click', () => {
+  download(`life-hard-${fileStamp()}.csv`, historyToCsv(speciesHistory, geneHistory), 'text/csv');
+  say(`CSV exporté (${sim.tick} ticks).`);
+});
+
+const fileInput = document.getElementById('file-load') as HTMLInputElement;
+document.getElementById('btn-load')!.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files?.[0];
+  fileInput.value = '';
+  if (!file) return;
+  try {
+    const save = parseSave(await file.text());
+    const loaded = Simulation.fromSnapshot(save.simulation);
+    sim = loaded;
+    writeParams(sim.params);
+    selection = null;
+    tickAccumulator = 0;
+    speciesHistory.clear();
+    for (const [id, values] of Object.entries(save.history.populations)) speciesHistory.set(id, values);
+    speciesHue.clear();
+    for (const [id, hue] of Object.entries(save.history.hues)) speciesHue.set(id, hue);
+    geneHistory.load(save.history.genes);
+    renderLegend();
+    running = false;
+    (document.getElementById('btn-toggle') as HTMLButtonElement).textContent = 'Reprendre';
+    renderFrame();
+    say(`Chargé : tick ${sim.tick} (en pause).`);
+  } catch (error) {
+    say(error instanceof Error ? error.message : 'Chargement impossible.');
+  }
+});
 
 document.getElementById('btn-drought')!.addEventListener('click', () => {
   sim.triggerEvent('drought');

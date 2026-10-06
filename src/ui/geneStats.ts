@@ -51,10 +51,12 @@ export function geneStats(pop: GenePopulation): GeneStats {
   return { mean, sd };
 }
 
+export type GeneSeries = Record<GeneKey, { mean: number[]; sd: number[] }>;
+
 /** Per-species time series of gene means and spreads, sampled every `sampleEvery` ticks. */
 export class GeneHistory {
   readonly sampleEvery: number;
-  private readonly series = new Map<string, Record<GeneKey, { mean: number[]; sd: number[] }>>();
+  private readonly series = new Map<string, GeneSeries>();
 
   constructor(sampleEvery: number) {
     this.sampleEvery = sampleEvery;
@@ -63,7 +65,7 @@ export class GeneHistory {
   record(speciesId: string, pop: GenePopulation): void {
     let entry = this.series.get(speciesId);
     if (!entry) {
-      entry = {} as Record<GeneKey, { mean: number[]; sd: number[] }>;
+      entry = {} as GeneSeries;
       for (const key of GENE_KEYS) entry[key] = { mean: [], sd: [] };
       this.series.set(speciesId, entry);
     }
@@ -74,11 +76,20 @@ export class GeneHistory {
     }
   }
 
-  get(speciesId: string): Record<GeneKey, { mean: number[]; sd: number[] }> | undefined {
+  get(speciesId: string): GeneSeries | undefined {
     return this.series.get(speciesId);
   }
 
   clear(): void {
     this.series.clear();
+  }
+
+  toJSON(): Record<string, GeneSeries> {
+    return Object.fromEntries(this.series);
+  }
+
+  load(data: Record<string, GeneSeries>): void {
+    this.series.clear();
+    for (const [id, entry] of Object.entries(data)) this.series.set(id, entry);
   }
 }

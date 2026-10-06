@@ -58,8 +58,14 @@ h1 {
 
 #actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+#io-message {
+  font-size: 12px;
+  opacity: 0.8;
 }
 
 .speed-control {
