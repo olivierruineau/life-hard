@@ -54,6 +54,18 @@ interface Drought {
   endTick: number;
 }
 
+/** Everything in a World that changes after generation (terrain is rebuilt from the seed). */
+export interface WorldSnapshot {
+  biomass: number[];
+  biomassMax: number[];
+  fertility: number[];
+  carrion: number[];
+  consumedLastTick: number[];
+  drought: number[];
+  scorch: number[];
+  droughts: Drought[];
+}
+
 export class World {
   readonly width: number;
   readonly height: number;
@@ -219,6 +231,39 @@ export class World {
       this.scorch[i] = 1;
       this.scorchActive = true;
     });
+  }
+
+  snapshot(): WorldSnapshot {
+    return {
+      biomass: Array.from(this.biomass),
+      biomassMax: Array.from(this.biomassMax),
+      fertility: Array.from(this.fertility),
+      carrion: Array.from(this.carrion),
+      consumedLastTick: Array.from(this.consumedLastTick),
+      drought: Array.from(this.drought),
+      scorch: Array.from(this.scorch),
+      droughts: this.droughts.map((d) => ({ ...d })),
+    };
+  }
+
+  restore(snapshot: WorldSnapshot): void {
+    const arrays = {
+      biomass: this.biomass,
+      biomassMax: this.biomassMax,
+      fertility: this.fertility,
+      carrion: this.carrion,
+      consumedLastTick: this.consumedLastTick,
+      drought: this.drought,
+      scorch: this.scorch,
+    };
+    for (const [name, target] of Object.entries(arrays)) {
+      const values = snapshot[name as keyof typeof arrays];
+      if (values.length !== target.length) throw new Error(`Snapshot does not match this world size ("${name}")`);
+      target.set(values);
+    }
+    this.droughts.length = 0;
+    this.droughts.push(...snapshot.droughts.map((d) => ({ ...d })));
+    this.scorchActive = this.scorch.some((v) => v > 0);
   }
 
   get activeDroughtCount(): number {

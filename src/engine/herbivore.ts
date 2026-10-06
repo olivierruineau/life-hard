@@ -1,3 +1,4 @@
+import { restoreColumns, snapshotColumns, type PopulationSnapshot } from './snapshot.ts';
 import { Biome } from './biome.ts';
 import {
   deriveMatingEnergyThreshold,
@@ -112,6 +113,8 @@ export const DEFAULT_HERBIVORE_PARAMS: HerbivoreParams = {
  * just resizable since population count changes every tick. `length` is the live individual
  * count; everything at index >= length in the backing arrays is stale/garbage.
  */
+const SNAPSHOT_COLUMNS = ['id', 'x', 'y', 'energy', 'cooldown', 'age', 'geneSpeed', 'geneVision', 'geneFertility', 'geneEfficiency', 'matingThreshold', 'maxLitterSize'] as const;
+
 export class HerbivorePopulation {
   length = 0;
   /** Cumulative count of individuals that arrived via `migrateFromEdge` (diagnostic). */
@@ -188,6 +191,20 @@ export class HerbivorePopulation {
 
   color(i: number, hueOffset: number, hueSpan: number): string {
     return genomeToColor(this.geneSpeed[i], this.geneVision[i], this.geneFertility[i], this.geneEfficiency[i], hueOffset, hueSpan);
+  }
+
+  snapshot(): PopulationSnapshot {
+    return snapshotColumns(this, SNAPSHOT_COLUMNS, this.length, this.nextId, this.migrantCount);
+  }
+
+  /** Replaces every individual with the ones in `snapshot`. */
+  restore(snapshot: PopulationSnapshot): void {
+    this.length = 0;
+    this.ensureCapacity(snapshot.length);
+    restoreColumns(this, SNAPSHOT_COLUMNS, snapshot);
+    this.length = snapshot.length;
+    this.nextId = snapshot.nextId;
+    this.migrantCount = snapshot.migrantCount;
   }
 
   /** Current index of the individual with this id, or -1 if it has died. */

@@ -1,3 +1,4 @@
+import { restoreColumns, snapshotColumns, type PopulationSnapshot } from './snapshot.ts';
 import {
   deriveMatingEnergyThreshold,
   deriveMaxLitterSize,
@@ -110,6 +111,8 @@ function countNearby(grid: SpatialGrid, world: World, cx: number, cy: number, r:
 
 /** SoA storage — see HerbivorePopulation for the general rationale (parallel grown TypedArray
  * columns instead of an array of objects). Predators additionally track `huntCooldown`. */
+const SNAPSHOT_COLUMNS = ['id', 'x', 'y', 'energy', 'cooldown', 'age', 'geneSpeed', 'geneVision', 'geneFertility', 'geneEfficiency', 'matingThreshold', 'maxLitterSize', 'huntCooldown'] as const;
+
 export class PredatorPopulation {
   length = 0;
   /** Cumulative count of individuals that arrived via `migrateFromEdge` (diagnostic). */
@@ -157,6 +160,20 @@ export class PredatorPopulation {
     if (!this.grid) this.grid = new SpatialGrid(world.width * world.height);
     this.grid.build(this.length, this.x, this.y, world.width);
     return this.grid;
+  }
+
+  snapshot(): PopulationSnapshot {
+    return snapshotColumns(this, SNAPSHOT_COLUMNS, this.length, this.nextId, this.migrantCount);
+  }
+
+  /** Replaces every individual with the ones in `snapshot`. */
+  restore(snapshot: PopulationSnapshot): void {
+    this.length = 0;
+    this.ensureCapacity(snapshot.length);
+    restoreColumns(this, SNAPSHOT_COLUMNS, snapshot);
+    this.length = snapshot.length;
+    this.nextId = snapshot.nextId;
+    this.migrantCount = snapshot.migrantCount;
   }
 
   /** Current index of the individual with this id, or -1 if it has died. */

@@ -13,8 +13,9 @@ import {
   ScavengerPopulation,
   type ScavengerParams,
 } from './scavenger.ts';
-import { hashStringToSeed, mulberry32, type Rng } from './random.ts';
-import { World } from './world.ts';
+import { hashStringToSeed, mulberry32, type SeededRng } from './random.ts';
+import type { PopulationSnapshot } from './snapshot.ts';
+import { World, type WorldSnapshot } from './world.ts';
 
 export interface SpeciesSelection {
   id: string;
@@ -229,6 +230,23 @@ export interface ScavengerSpeciesInstance {
   population: ScavengerPopulation;
 }
 
+export const SNAPSHOT_VERSION = 1;
+
+/** Full, JSON-serializable state of a simulation: restoring it resumes the exact same trajectory.
+ * Species presets (gene ranges, costs, ...) are code, not data: a snapshot only resumes faithfully
+ * on the same version of those presets. */
+export interface SimulationSnapshot {
+  version: number;
+  params: SimulationParams;
+  tick: number;
+  rng: number;
+  eventRng: number;
+  world: WorldSnapshot;
+  herbivores: Record<string, PopulationSnapshot>;
+  predators: Record<string, PopulationSnapshot>;
+  scavengers: Record<string, PopulationSnapshot>;
+}
+
 export type ClimateEventKind = 'drought' | 'fire';
 
 const DROUGHT_DURATION = 500;
@@ -238,9 +256,9 @@ export class Simulation {
   readonly herbivoreSpecies: HerbivoreSpeciesInstance[];
   readonly predatorSpecies: PredatorSpeciesInstance[];
   readonly scavengerSpecies: ScavengerSpeciesInstance[];
-  private readonly rng: Rng;
+  private readonly rng: SeededRng;
   /** Separate stream so that rolling for events never shifts the population dynamics' draws. */
-  private readonly eventRng: Rng;
+  private readonly eventRng: SeededRng;
   readonly params: SimulationParams;
   tick = 0;
 
@@ -296,6 +314,47 @@ export class Simulation {
       population.spawnRandom(this.world, count, this.rng);
       this.scavengerSpecies.push({ id: preset.id, label: preset.label, hueOffset: preset.hueOffset, population });
     }
+  }
+
+  snapshot(): SimulationSnapshot {
+    const populations = <T extends { id: string; population: { snapshot(): PopulationSnapshot } }>(species: T[]) =>
+      Object.fromEntries(species.map((s) => [s.id, s.population.snapshot()]));
+    return {
+      version: SNAPSHOT_VERSION,
+      params: structuredClone(this.params),
+      tick: this.tick,
+      rng: this.rng.getState(),
+      eventRng: this.eventRng.getState(),
+      world: this.world.snapshot(),
+      herbivores: populations(this.herbivoreSpecies),
+      predators: populations(this.predatorSpecies),
+      scavengers: populations(this.scavengerSpecies),
+    };
+  }
+
+  /** Rebuilds a simulation (terrain from the saved params) and resumes it where the snapshot left off. */
+  static fromSnapshot(snapshot: SimulationSnapshot): Simulation {
+    if (snapshot.version !== SNAPSHOT_VERSION) throw new Error(`Unsupported save version ${snapshot.version}`);
+    const sim = new Simulation(structuredClone(snapshot.params));
+    const restoreAll = <T extends { id: string; population: { restore(s: PopulationSnapshot): void } }>(
+      species: T[],
+      saved: Record<string, PopulationSnapshot>,
+    ) => {
+      for (const s of species) {
+        const data = saved[s.id];
+        if (!data) throw new Error(`Save has no data for species "${s.id}"`);
+        s.population.restore(data);
+      }
+      if (Object.keys(saved).length !== species.length) throw new Error('Save and parameters list different species');
+    };
+    restoreAll(sim.herbivoreSpecies, snapshot.herbivores);
+    restoreAll(sim.predatorSpecies, snapshot.predators);
+    restoreAll(sim.scavengerSpecies, snapshot.scavengers);
+    sim.world.restore(snapshot.world);
+    sim.tick = snapshot.tick;
+    sim.rng.setState(snapshot.rng);
+    sim.eventRng.setState(snapshot.eventRng);
+    return sim;
   }
 
   /** Strikes a drought (wide, lasting) or a fire (smaller, instant) at a random place, or at (x, y) if given. */
